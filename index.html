@@ -1,498 +1,1163 @@
-Sorry about that confusion! Here's the game, live and playable right now:
 
-```jsx
-import { useState } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<title>The Rebuild — Post-Flare Project Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Oswald:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & Base ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  font-size: 16px;
+}
+body {
+  background: #080705;
+  font-family: 'Courier Prime', monospace;
+  color: #1a1408;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
 
+/* Touch targets: no flash, manipulation only */
+button, .project-card, .choice-btn, .home-btn, .next-btn, .btn-primary, .btn-secondary {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* ── CSS Variables ── */
+:root {
+  --void:    #080705;
+  --char:    #141210;
+  --ember:   #c94a1a;
+  --ember2:  #e8621a;
+  --amber:   #c8880a;
+  --amber2:  #e8aa20;
+  --paper:   #e4d8bc;
+  --paper2:  #cfc0a0;
+  --paper3:  #b0a080;
+  --ink:     #1a1408;
+  --faded:   #7a6a50;
+  --smoke:   #4a4030;
+  --good:    #4a8a2a;
+  --good-bg: rgba(20,50,8,0.7);
+  --bad:     #9a2a0a;
+  --bad-bg:  rgba(50,10,4,0.7);
+  --neu:     #4a6080;
+  --neu-bg:  rgba(10,24,44,0.7);
+}
+
+/* ── Grain overlay & scanline (desktop only — skip on low-power mobile) ── */
+@media (min-width: 641px) {
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 9999;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.055'/%3E%3C/svg%3E");
+    opacity: 0.4; mix-blend-mode: overlay;
+  }
+  @keyframes scan { 0%{top:-4px} 100%{top:100vh} }
+  body::before {
+    content: '';
+    position: fixed; left: 0; right: 0; height: 2px;
+    background: linear-gradient(transparent,rgba(200,136,10,0.12),transparent);
+    animation: scan 10s linear infinite;
+    pointer-events: none; z-index: 9998;
+  }
+}
+
+/* ── Animations ── */
+@keyframes flicker   { 0%,100%{opacity:1} 93%{opacity:0.85} 94%{opacity:1} 97%{opacity:0.9} 98%{opacity:1} }
+@keyframes glow-pulse{ 0%,100%{text-shadow:0 0 10px rgba(232,170,32,0.4)} 50%{text-shadow:0 0 20px rgba(232,170,32,0.7),0 0 40px rgba(200,80,20,0.3)} }
+@keyframes shimmer   { 0%,100%{transform:translateX(-100%)} 50%{transform:translateX(100%)} }
+@keyframes fadeUp    { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+
+/* ── Screen shell ── */
+.screen     { display: none; min-height: 100vh; min-height: 100dvh; }
+.screen.active { display: flex; flex-direction: column; }
+
+/* ════════════════════════════════════════
+   HOME — mobile-first
+════════════════════════════════════════ */
+#home {
+  background: var(--void);
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0 0 40px;
+  position: relative;
+  overflow: hidden;
+}
+#home::before {
+  content: '';
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 100%, rgba(180,80,10,0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 30% 30% at 20% 20%, rgba(200,136,10,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+.home-inner {
+  position: relative; z-index: 1;
+  width: 100%; max-width: 720px;
+  margin: 0 auto;
+  text-align: center;
+  padding: 0 16px;
+}
+
+/* broadcast bar */
+.broadcast {
+  background: var(--ember);
+  color: var(--void);
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px; letter-spacing: 3px;
+  text-transform: uppercase;
+  padding: 9px 12px;
+  margin: 0 -16px 24px;   /* bleed to edges */
+  position: relative; overflow: hidden;
+}
+.broadcast::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg,transparent,rgba(255,255,255,0.15),transparent);
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* day counter */
+.day-counter {
+  font-family: 'Oswald', sans-serif;
+  font-size: 10px; letter-spacing: 4px;
+  color: var(--amber);
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.day-counter::before, .day-counter::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg,transparent,rgba(200,136,10,0.4),transparent);
+  max-width: 80px;
+}
+
+/* main title */
+.home-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: clamp(2.6rem, 11vw, 6rem);
+  font-weight: 700;
+  color: var(--paper);
+  line-height: 0.95; letter-spacing: -1px;
+  margin-bottom: 4px;
+  animation: flicker 7s infinite;
+}
+.home-title .sub {
+  display: block;
+  font-size: clamp(0.9rem, 4vw, 1.9rem);
+  font-weight: 300; letter-spacing: 5px;
+  color: var(--amber2);
+  text-transform: uppercase;
+  margin-top: 6px;
+  animation: glow-pulse 4s ease-in-out infinite;
+}
+
+/* tagline */
+.home-tagline {
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px; color: var(--faded); line-height: 1.75;
+  margin: 18px auto;
+  border-top: 1px solid rgba(200,136,10,0.15);
+  border-bottom: 1px solid rgba(200,136,10,0.15);
+  padding: 12px 0;
+}
+
+/* torn note */
+.torn-note {
+  background: var(--paper);
+  border: 1px solid var(--paper3);
+  padding: 14px 16px;
+  margin: 0 auto 22px;
+  font-family: 'Caveat', cursive;
+  font-size: 16px; color: #2a1e0c; line-height: 1.65;
+  box-shadow: 3px 4px 0 rgba(0,0,0,0.5), inset 0 0 40px rgba(180,140,60,0.08);
+  text-align: left; position: relative;
+}
+.torn-note::before { content:'📌'; position:absolute; top:-10px; left:14px; font-size:17px; }
+.torn-note strong  { color: var(--ember); }
+
+/* missions label */
+.missions-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: 9px; letter-spacing: 4px;
+  color: var(--smoke);
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+
+/* project grid — 2 cols on mobile, auto-fit on wider */
+.project-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+/* project card */
+.project-card {
+  background: rgba(20,16,10,0.9);
+  border: 1px solid rgba(200,136,10,0.18);
+  border-top: 3px solid var(--ember);
+  padding: 12px 10px 12px;
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.15s, border-color 0.15s;
+  /* min tap target */
+  min-height: 90px;
+}
+.project-card:active {
+  background: rgba(200,80,20,0.12);
+  border-color: rgba(200,136,10,0.5);
+}
+.pc-emoji   { font-size: 22px; margin-bottom: 6px; display: block; }
+.pc-name    { font-family:'Oswald',sans-serif; font-size:12px; font-weight:700; color:var(--paper); line-height:1.2; margin-bottom:4px; text-transform:uppercase; }
+.pc-era     { font-family:'Courier Prime',monospace; font-size:8px; color:var(--amber); letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
+.pc-diff    { font-size:10px; color:var(--faded); }
+.pc-urgency { position:absolute; top:6px; right:6px; font-family:'Oswald',sans-serif; font-size:7px; letter-spacing:1px; color:var(--ember2); border:1px solid var(--ember); padding:1px 4px; text-transform:uppercase; }
+.select-label { font-family:'Courier Prime',monospace; font-size:9px; letter-spacing:2px; color:rgba(200,136,10,0.35); text-transform:uppercase; }
+
+/* ════════════════════════════════════════
+   GAME
+════════════════════════════════════════ */
+#game { background: var(--void); }
+
+/* sticky header */
+.game-header {
+  background: var(--char);
+  padding: 8px 14px;
+  border-bottom: 2px solid var(--ember);
+  position: sticky; top: 0; z-index: 100;
+  /* safe area for notches */
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-left: max(14px, env(safe-area-inset-left));
+  padding-right: max(14px, env(safe-area-inset-right));
+}
+/* top row: back btn + project name */
+.header-left {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.home-btn {
+  background: transparent;
+  border: 1px solid rgba(200,80,20,0.4);
+  padding: 7px 12px;
+  color: var(--faded);
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+  min-height: 36px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.home-btn:active { border-color: var(--ember); color: var(--paper); }
+.game-project-name {
+  font-family: 'Oswald', sans-serif;
+  color: var(--amber2);
+  font-size: 14px; font-weight: 700; letter-spacing: 0.5px;
+  text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  flex: 1;
+}
+
+/* stats bar — always 2×2 on mobile */
+.game-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.stat-pill {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(200,136,10,0.15);
+  padding: 6px 8px;
+}
+.stat-icon  { font-size: 12px; flex-shrink: 0; }
+.stat-val   { font-family:'Oswald',sans-serif; font-size:16px; font-weight:700; color:var(--paper); min-width:24px; text-align:center; line-height:1; }
+.stat-label { font-family:'Courier Prime',monospace; font-size:8px; color:var(--faded); letter-spacing:1px; text-transform:uppercase; }
+
+/* game body */
+.game-body {
+  flex: 1;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 16px 14px 32px;
+  width: 100%;
+  /* safe area bottom */
+  padding-bottom: max(32px, env(safe-area-inset-bottom));
+}
+
+/* phase pip bar */
+.phase-bar  { display:flex; gap:3px; margin-bottom:16px; }
+.phase-pip  { flex:1; height:4px; background:rgba(200,136,10,0.1); border-radius:2px; }
+.phase-pip.done    { background:var(--ember); }
+.phase-pip.current { background:var(--amber2); box-shadow:0 0 6px var(--amber); }
+
+/* scene card */
+.scene-card {
+  background: var(--paper);
+  border-left: 4px solid var(--ember);
+  padding: 18px 16px 16px;
+  margin-bottom: 12px;
+  position: relative;
+  box-shadow: 4px 5px 0 rgba(0,0,0,0.5), inset 0 0 40px rgba(160,120,40,0.06);
+  animation: fadeUp 0.28s ease forwards;
+}
+.scene-card::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(transparent,transparent 27px,rgba(140,110,50,0.1) 27px,rgba(140,110,50,0.1) 28px);
+  pointer-events: none;
+}
+.scene-phase     { font-family:'Oswald',sans-serif; font-size:8px; letter-spacing:3px; color:var(--ember); text-transform:uppercase; margin-bottom:8px; position:relative; z-index:1; }
+.scene-title     { font-family:'Caveat',cursive; font-size:clamp(20px,5.5vw,28px); font-weight:700; color:var(--ink); margin-bottom:12px; line-height:1.2; position:relative; z-index:1; }
+.scene-situation { font-family:'Courier Prime',monospace; font-size:13px; color:#241808; line-height:1.8; margin-bottom:14px; position:relative; z-index:1; }
+.scene-divider   { border:none; border-top:1px dashed rgba(140,110,50,0.35); margin-bottom:12px; position:relative; z-index:1; }
+.scene-flavour   { font-family:'Caveat',cursive; font-size:15px; color:#6a4e28; padding-left:12px; border-left:2px solid rgba(200,80,20,0.4); line-height:1.5; position:relative; z-index:1; }
+
+/* choice buttons */
+.choices    { display:grid; gap:8px; margin-bottom:14px; animation:fadeUp 0.32s ease forwards; }
+.choice-btn {
+  background: rgba(14,10,6,0.92);
+  border: 1px solid rgba(200,136,10,0.18);
+  border-left: 3px solid rgba(200,80,20,0.25);
+  padding: 14px 14px;
+  text-align: left;
+  font-family: 'Courier Prime', monospace;
+  font-size: 13px; color: var(--paper2); line-height: 1.6;
+  display: flex; gap: 10px; align-items: flex-start;
+  /* big tap target */
+  min-height: 54px;
+  transition: background 0.12s, border-left-color 0.12s;
+}
+.choice-btn:active:not([disabled]) {
+  background: rgba(200,80,20,0.12);
+  border-left-color: var(--amber2);
+}
+.choice-btn.chosen-good    { border-left-color:var(--good); background:var(--good-bg); }
+.choice-btn.chosen-bad     { border-left-color:var(--bad);  background:var(--bad-bg);  }
+.choice-btn.chosen-neutral { border-left-color:var(--neu);  background:var(--neu-bg);  }
+.choice-btn.not-chosen     { opacity:0.25; pointer-events:none; }
+.choice-letter { font-family:'Oswald',sans-serif; font-weight:700; font-size:14px; color:var(--amber); flex-shrink:0; width:18px; }
+
+/* outcome box */
+.outcome-box {
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: none;
+  font-size: 13px; line-height: 1.8;
+  font-family: 'Courier Prime', monospace;
+  animation: fadeUp 0.28s ease forwards;
+}
+.outcome-box.show   { display: block; }
+.outcome-box.good    { background:var(--good-bg); border:1px solid rgba(60,120,30,0.4); border-left:3px solid var(--good); }
+.outcome-box.bad     { background:var(--bad-bg);  border:1px solid rgba(120,30,20,0.4); border-left:3px solid var(--bad); }
+.outcome-box.neutral { background:var(--neu-bg);  border:1px solid rgba(60,90,120,0.3); border-left:3px solid var(--neu); }
+.outcome-title { font-family:'Oswald',sans-serif; font-weight:700; font-size:11px; letter-spacing:2px; text-transform:uppercase; margin-bottom:7px; }
+.outcome-box.good    .outcome-title { color:#7ac45a; }
+.outcome-box.bad     .outcome-title { color:#c45a3a; }
+.outcome-box.neutral .outcome-title { color:#6a8aaa; }
+.outcome-box p  { color:var(--paper2); }
+.stat-change    { font-size:11px; margin-top:10px; display:flex; gap:6px; flex-wrap:wrap; }
+.sc-item        { padding:3px 8px; font-weight:700; font-family:'Oswald',sans-serif; font-size:10px; letter-spacing:1px; }
+.sc-pos { background:rgba(40,80,20,0.5); color:#8ac46a; border:1px solid rgba(80,160,40,0.3); }
+.sc-neg { background:rgba(80,20,10,0.5); color:#c46a4a; border:1px solid rgba(160,40,20,0.3); }
+.sc-neu { background:rgba(20,40,60,0.5); color:#6a8aaa; border:1px solid rgba(40,80,120,0.3); }
+
+/* continue button — full-width on mobile */
+.next-btn {
+  background: var(--ember);
+  border: none;
+  padding: 16px 20px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px; font-weight: 700;
+  color: var(--void);
+  letter-spacing: 3px; text-transform: uppercase;
+  display: none;
+  width: 100%;
+  text-align: center;
+  min-height: 52px;
+  transition: background 0.15s;
+}
+.next-btn.show  { display: block; }
+.next-btn:active { background: var(--amber2); }
+
+/* ════════════════════════════════════════
+   END SCREEN
+════════════════════════════════════════ */
+#end {
+  background: var(--void);
+  align-items: center; justify-content: center;
+  padding: 32px 16px 40px;
+  padding-bottom: max(40px, env(safe-area-inset-bottom));
+  position: relative; overflow: hidden;
+}
+#end::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse 60% 60% at 50% 90%, rgba(200,80,10,0.1) 0%, transparent 70%);
+}
+.end-inner  { max-width:520px; position:relative; z-index:1; text-align:center; width:100%; }
+.end-tag    { font-family:'Oswald',sans-serif; font-size:8px; letter-spacing:4px; color:var(--ember); text-transform:uppercase; border:1px solid rgba(200,80,20,0.4); display:inline-block; padding:4px 12px; margin-bottom:16px; }
+.end-emoji  { font-size:52px; margin-bottom:12px; animation:flicker 5s infinite; }
+.end-title  { font-family:'Oswald',sans-serif; font-size:clamp(1.6rem,7vw,3rem); font-weight:700; color:var(--paper); margin-bottom:10px; line-height:1.1; text-transform:uppercase; letter-spacing:2px; }
+.end-score-ring { width:108px; height:108px; border-radius:50%; border:2px solid var(--ember); box-shadow:0 0 24px rgba(200,80,20,0.25),inset 0 0 24px rgba(200,80,20,0.05); display:flex; flex-direction:column; align-items:center; justify-content:center; margin:18px auto; animation:glow-pulse 3s ease-in-out infinite; }
+.end-score-n { font-family:'Oswald',sans-serif; font-size:44px; font-weight:700; color:var(--amber2); line-height:1; }
+.end-score-l { font-family:'Courier Prime',monospace; font-size:8px; color:var(--faded); letter-spacing:3px; text-transform:uppercase; margin-top:3px; }
+.end-verdict { font-family:'Caveat',cursive; font-size:17px; color:var(--paper2); line-height:1.7; margin-bottom:22px; border-left:2px solid rgba(200,80,20,0.4); padding-left:14px; text-align:left; }
+.end-stats  { display:flex; gap:16px; justify-content:center; margin-bottom:24px; flex-wrap:wrap; }
+.end-stat-n { font-family:'Oswald',sans-serif; font-size:30px; font-weight:700; color:var(--amber2); }
+.end-stat-l { font-family:'Courier Prime',monospace; font-size:8px; color:var(--faded); letter-spacing:2px; text-transform:uppercase; margin-top:2px; }
+
+/* end buttons — stacked on mobile */
+.end-buttons { display:flex; flex-direction:column; gap:8px; }
+.btn-primary  { background:var(--ember); border:none; padding:15px 20px; font-family:'Oswald',sans-serif; font-size:13px; font-weight:700; color:var(--void); letter-spacing:3px; text-transform:uppercase; min-height:52px; width:100%; transition:background 0.15s; }
+.btn-primary:active  { background:var(--amber2); }
+.btn-secondary { background:transparent; border:1px solid rgba(200,80,20,0.4); padding:14px 20px; font-family:'Oswald',sans-serif; font-size:13px; font-weight:400; color:var(--paper2); letter-spacing:2px; text-transform:uppercase; min-height:52px; width:100%; transition:border-color 0.15s,color 0.15s; }
+.btn-secondary:active { border-color:var(--ember); color:var(--paper); }
+
+/* ════════════════════════════════════════
+   BREAKPOINTS — upgrade for larger screens
+════════════════════════════════════════ */
+
+/* ── Phablet 480px+ ── */
+@media (min-width: 480px) {
+  .broadcast      { font-size: 10px; letter-spacing: 4px; }
+  .home-title .sub{ letter-spacing: 7px; }
+  .torn-note      { font-size: 17px; transform: rotate(-0.4deg); }
+  .project-grid   { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .pc-name        { font-size: 13px; }
+  .game-project-name { font-size: 16px; }
+  .scene-title    { font-size: clamp(22px, 5vw, 28px); }
+  .scene-situation{ font-size: 14px; }
+  .choice-btn     { font-size: 14px; }
+}
+
+/* ── Tablet 640px+ ── */
+@media (min-width: 640px) {
+  .home-inner { padding: 0 24px; }
+  .broadcast  { margin: 0 -24px 28px; }
+  .home-tagline { font-size: 14px; }
+  .torn-note  { padding: 16px 22px; font-size: 18px; margin-bottom: 28px; }
+
+  /* header: side-by-side layout */
+  .game-header    { padding: 10px 20px; }
+  .header-left    { margin-bottom: 0; }
+  .game-header    { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .game-stats     { grid-template-columns: repeat(4, auto); gap: 8px; }
+  .stat-pill      { padding: 4px 10px; }
+  .stat-val       { font-size: 15px; min-width: 28px; }
+  .game-project-name { font-size: 18px; font-weight: 700; }
+
+  .game-body      { padding: 24px 20px 40px; }
+  .phase-bar      { margin-bottom: 22px; }
+  .scene-card     { padding: 24px 24px 20px; margin-bottom: 16px; }
+  .choices        { gap: 8px; margin-bottom: 16px; }
+  .choice-btn     { padding: 14px 18px; min-height: 52px; }
+  .choice-btn:hover { background: rgba(200,80,20,0.1); border-left-color: var(--amber2); color: var(--paper); transform: translateX(3px); }
+  .project-card:hover { background: rgba(200,80,20,0.1); border-color: rgba(200,136,10,0.45); transform: translateY(-3px); box-shadow: 0 6px 20px rgba(200,80,20,0.15); }
+  .next-btn       { width: auto; display: none; padding: 13px 36px; }
+  .next-btn.show  { display: inline-block; }
+  .next-btn:hover { background: var(--amber2); }
+  .home-btn:hover { border-color: var(--ember); color: var(--paper); }
+  .btn-primary:hover  { background: var(--amber2); }
+  .btn-secondary:hover{ border-color: var(--ember); color: var(--paper); }
+
+  /* end buttons inline */
+  .end-buttons { flex-direction: row; justify-content: center; }
+  .btn-primary, .btn-secondary { width: auto; padding: 12px 28px; }
+}
+
+/* ── Desktop 900px+ ── */
+@media (min-width: 900px) {
+  .home-inner  { padding: 0 32px; }
+  .broadcast   { margin: 0 -32px 32px; font-size: 10px; }
+  .game-header { padding: 12px 24px; }
+  .game-body   { padding: 28px 24px 48px; }
+  .scene-card  { padding: 28px 28px 22px; box-shadow: 5px 6px 0 rgba(0,0,0,0.55); }
+  .project-grid { gap: 10px; }
+}
+
+/* ── Landscape phone (height < 500px) ── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .game-header   { padding: 5px 14px; }
+  .game-project-name { font-size: 13px; }
+  .stat-pill     { padding: 3px 7px; }
+  .stat-val      { font-size: 13px; }
+  .stat-label    { display: none; }
+  .game-body     { padding: 10px 14px 16px; }
+  .scene-card    { padding: 12px 14px 12px; margin-bottom: 10px; }
+  .scene-title   { font-size: 18px; margin-bottom: 8px; }
+  .phase-bar     { margin-bottom: 10px; }
+  .phase-pip     { height: 3px; }
+  .choice-btn    { min-height: 44px; padding: 10px 14px; }
+  .next-btn      { padding: 12px 20px; min-height: 44px; }
+}
+</style>
+</head>
+<body>
+
+<div id="home" class="screen active">
+  <div class="home-inner">
+    <div class="broadcast">⚡ SOLAR EVENT OMEGA — ALL GRIDS DOWN — DAY 312 OF REBUILDING ⚡</div>
+    <div class="day-counter">RECONSTRUCTION LOG</div>
+    <h1 class="home-title">THE REBUILD<span class="sub">Project Manager</span></h1>
+    <p class="home-tagline">The satellites are gone. The internet is gone. The power is gone.<br>But people still need water, shelter, food, and each other.<br>You're the one who figures out how to organise it.</p>
+    <div class="torn-note">
+      Someone left this notebook at the community board. On the cover:<br><br>
+      <strong>"Leadership in a world with no tech is still leadership. The problems didn't change. Just the tools."</strong><br><br>
+      — Unknown. Presumably still alive.
+    </div>
+    <div class="missions-label">// Active Reconstruction Projects //</div>
+    <div class="project-grid" id="projectGrid"></div>
+    <div class="select-label">[ select a mission to manage ]</div>
+  </div>
+</div>
+
+<div id="game" class="screen">
+  <div class="game-header">
+    <div class="header-left">
+      <button class="home-btn" onclick="goHome()">← Log</button>
+      <div class="game-project-name" id="headerName"></div>
+    </div>
+    <div class="game-stats">
+      <div class="stat-pill"><span class="stat-icon">🪙</span><span class="stat-val" id="statBudget">100</span><span class="stat-label">Supplies</span></div>
+      <div class="stat-pill"><span class="stat-icon">⏱</span><span class="stat-val" id="statSchedule">100</span><span class="stat-label">Time</span></div>
+      <div class="stat-pill"><span class="stat-icon">👥</span><span class="stat-val" id="statTeam">100</span><span class="stat-label">Morale</span></div>
+      <div class="stat-pill"><span class="stat-icon">🤝</span><span class="stat-val" id="statSponsor">100</span><span class="stat-label">Council</span></div>
+    </div>
+  </div>
+  <div class="game-body">
+    <div class="phase-bar" id="phaseBar"></div>
+    <div class="scene-card">
+      <div class="scene-phase" id="scenePhase"></div>
+      <div class="scene-title" id="sceneTitle"></div>
+      <div class="scene-situation" id="sceneSituation"></div>
+      <hr class="scene-divider">
+      <div class="scene-flavour" id="sceneFlavour"></div>
+    </div>
+    <div class="choices" id="choices"></div>
+    <div class="outcome-box" id="outcomeBox">
+      <div class="outcome-title" id="outcomeTitle"></div>
+      <p id="outcomeText"></p>
+      <div class="stat-change" id="statChange"></div>
+    </div>
+    <button class="next-btn" id="nextBtn" onclick="nextScene()">CONTINUE →</button>
+  </div>
+</div>
+
+<div id="end" class="screen">
+  <div class="end-inner">
+    <div class="end-tag" id="endProject"></div>
+    <div class="end-emoji" id="endEmoji"></div>
+    <h2 class="end-title" id="endTitle"></h2>
+    <div class="end-score-ring"><div class="end-score-n" id="endScore"></div><div class="end-score-l">Score</div></div>
+    <p class="end-verdict" id="endVerdict"></p>
+    <div class="end-stats">
+      <div class="end-stat"><div class="end-stat-n" id="endBudget"></div><div class="end-stat-l">🪙 Supplies</div></div>
+      <div class="end-stat"><div class="end-stat-n" id="endSchedule"></div><div class="end-stat-l">⏱ Time</div></div>
+      <div class="end-stat"><div class="end-stat-n" id="endTeam"></div><div class="end-stat-l">👥 Morale</div></div>
+      <div class="end-stat"><div class="end-stat-n" id="endSponsor"></div><div class="end-stat-l">🤝 Council</div></div>
+    </div>
+    <div class="end-buttons">
+      <button class="btn-primary" onclick="replayProject()">↺ Try Again</button>
+      <button class="btn-secondary" onclick="goHome()">← All Projects</button>
+    </div>
+  </div>
+</div>
+
+<script>
 const PROJECTS = [
   {
     id:"water", emoji:"💧", name:"The Water Relay", era:"Day 14 · River Valley", diff:"★★☆☆☆", urgency:"CRITICAL",
+    intro:"312 days after the flare. Your settlement of 800 people is drinking from an unfiltered river 3km away. Two children are already sick. You've been asked to build a gravity-fed water relay. You have hand tools, rope, clay pots, and volunteers.",
     scenes:[
-      { phase:"Initiation", title:"How Much Water Do We Actually Need?", situation:"Before you dig a single channel, you need a number. Marta — a former civil engineer — says survey first. Others want to start digging now. Every day without clean water is a health risk.", flavour:"Someone's kid is crying from a stomach cramp. It is not an abstract problem.",
+      { phase:"Initiation", title:"How Much Water Do We Actually Need?",
+        situation:"Before you dig a single channel, you need a number. Marta — a former civil engineer — says survey needs properly first. Others want to start digging now. Every day without clean water is a health risk.",
+        flavour:"Someone's kid is crying from a stomach cramp. It is not an abstract problem.",
         choices:[
           {text:"Two days to survey properly with Marta before starting.", outcome:"good", title:"Measure Twice", explanation:"Marta's survey reveals you need 40% less pipe length — the natural ridge channels water closer than anyone knew. Two days saved weeks.", budget:15,schedule:10,team:5,sponsor:10},
-          {text:"Start digging immediately. Clean water can't wait.", outcome:"bad", title:"Wrong Direction", explanation:"You dig 600 metres before realising the gradient is wrong. Water won't flow uphill. Backfill and restart. Three days lost, morale tanked.", budget:-15,schedule:-20,team:-10,sponsor:-10},
-          {text:"Split the group: half survey, half begin digging.", outcome:"neutral", title:"Parallel Start", explanation:"Early digging is mostly right. The survey catches one major error in time. Minor rework but decent progress.", budget:-5,schedule:5,team:5,sponsor:5},
-        ]},
-      { phase:"Planning", title:"Clay Pipe vs. Hollowed Log", situation:"Your engineers disagree. Marta wants fired clay pipes — watertight, durable, but ten days to cure. Old Pete wants hollowed logs — faster, but leaky and rot within a year. You have sick people now.", flavour:"Old Pete has been building things since before the flare. Marta has a degree. Both are right.",
+          {text:"Start digging immediately. Clean water can't wait.", outcome:"bad", title:"Wrong Direction", explanation:"You dig 600 metres before realising the gradient is wrong. Water won't flow uphill. Backfill and start again. Three days lost, morale tanked.", budget:-15,schedule:-20,team:-10,sponsor:-10},
+          {text:"Split the group: half survey, half begin digging the obvious section.", outcome:"neutral", title:"Parallel Start", explanation:"Early digging is mostly right. The survey catches one major error in time. Minor rework but decent progress.", budget:-5,schedule:5,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Planning", title:"Clay Pipe vs. Hollowed Log",
+        situation:"Your engineers disagree. Marta wants fired clay pipes — watertight, durable, but ten days to cure. Old Pete wants hollowed logs — faster, but leaky and rot within a year. You have sick people now.",
+        flavour:"Old Pete has been building things since before the flare. Marta has a degree. Both are right.",
         choices:[
           {text:"Clay pipes. Build for permanence, not speed.", outcome:"neutral", title:"Long Game", explanation:"Ten brutal days while people wait. But the pipe lasts a generation. The council is frustrated but ultimately grateful.", budget:-10,schedule:-10,team:-5,sponsor:-5},
-          {text:"Hollow logs to get water flowing this week, upgrade later.", outcome:"good", title:"Water Now!", explanation:"Water reaches the settlement in 4 days. Leaking is manageable. You schedule the upgrade for next month. People stop getting sick.", budget:5,schedule:20,team:15,sponsor:15},
-          {text:"Clay for the main run, logs for the first section as emergency.", outcome:"good", title:"Hybrid Smart", explanation:"Emergency logs get water flowing in two days. Clay follows. Nobody dies waiting. Good engineering and good leadership.", budget:-5,schedule:10,team:10,sponsor:10},
-        ]},
-      { phase:"Execution", title:"The Volunteers Stop Showing Up", situation:"Day 8. You had 60 volunteers. Now you have 22. At this pace you won't finish before the rainy season.", flavour:"You count heads at dawn. Twenty-two. The trench needs eighty metres more.",
+          {text:"Hollow logs to get water flowing this week, upgrade later.", outcome:"good", title:"Water Now!", explanation:"Water reaches the settlement in 4 days. The leaking is manageable. You schedule the permanent upgrade for next month. People stop getting sick.", budget:5,schedule:20,team:15,sponsor:15},
+          {text:"Clay pipes for the main run, logs for the first section as emergency.", outcome:"good", title:"Hybrid Smart", explanation:"Emergency logs get water flowing in two days. Clay follows. Nobody dies waiting. Good engineering and good leadership.", budget:-5,schedule:10,team:10,sponsor:10},
+        ]
+      },
+      { phase:"Execution", title:"The Volunteers Stop Showing Up",
+        situation:"Day 8. You had 60 volunteers. Now you have 22. The rest say their families need them, they're exhausted, or they don't think this will work. At this pace you won't finish before the rainy season.",
+        flavour:"You count heads at dawn. Twenty-two. The trench needs eighty metres more.",
         choices:[
-          {text:"Offer a share of the first clean water to volunteers who finish.", outcome:"good", title:"Fair Exchange", explanation:"People understand fairness. Forty-one show up the next day. The channel is finished.", budget:0,schedule:15,team:20,sponsor:10},
-          {text:"Go to the council and demand they compel people to work.", outcome:"bad", title:"Forced Labour", explanation:"The council refuses — that's exactly what they're trying to leave behind. Three council members stop returning your messages.", budget:0,schedule:-10,team:-20,sponsor:-25},
-          {text:"Reduce scope — shorter relay to a closer, less clean source.", outcome:"neutral", title:"Shortened Scope", explanation:"You finish in time. The water needs boiling. A step forward, not the full solution.", budget:5,schedule:10,team:-5,sponsor:-5},
-        ]},
-      { phase:"Execution", title:"A Shorter Route — Through Someone Else's Land", situation:"A scout reports a route that cuts two days — but it crosses the eastern farming collective's fields. You could ask, or do it quietly.", flavour:"The eastern collective lost three people to the flare. They have not been easy neighbours.",
+          {text:"Offer a share of the first clean water to volunteers who finish the job.", outcome:"good", title:"Fair Exchange", explanation:"People understand fairness. Forty-one show up the next day. The channel is finished. The incentive cost nothing — clean water was always the point.", budget:0,schedule:15,team:20,sponsor:10},
+          {text:"Go to the council and demand they compel people to work.", outcome:"bad", title:"Forced Labour", explanation:"The council refuses — that's exactly the kind of thing they're trying to leave behind. Three council members stop returning your messages.", budget:0,schedule:-10,team:-20,sponsor:-25},
+          {text:"Reduce scope — build a shorter relay to a closer, less clean source.", outcome:"neutral", title:"Shortened Scope", explanation:"You finish in time. The water is adequate but needs boiling. A step forward, not the full solution.", budget:5,schedule:10,team:-5,sponsor:-5},
+        ]
+      },
+      { phase:"Execution", title:"A Shorter Route — Through Someone Else's Land",
+        situation:"A scout reports a route that cuts two days of work — but it crosses the eastern farming collective's fields. Nobody has spoken to them in months. You could ask, or do it quietly.",
+        flavour:"The eastern collective lost three people to the flare. They have not been easy neighbours.",
         choices:[
-          {text:"Go and ask. Bring a gift — a sack of your best grain.", outcome:"good", title:"Neighbourly Diplomacy", explanation:"They say yes. The gesture matters more than the grain. You gain two allies and save two days.", budget:-5,schedule:15,team:5,sponsor:15},
-          {text:"Take the route without asking. Done before they notice.", outcome:"bad", title:"Trust Destroyed", explanation:"They notice within hours and block the channel with rocks. The confrontation nearly turns violent.", budget:-10,schedule:-20,team:-10,sponsor:-25},
-          {text:"Use the longer route. Not worth the politics.", outcome:"neutral", title:"Keep the Peace", explanation:"Safe choice. Two extra days, no enemies made.", budget:0,schedule:-8,team:5,sponsor:5},
-        ]},
-      { phase:"Closing", title:"First Water Day", situation:"Water is flowing — but a section is seeping, losing 20% of flow. The settlement is waiting for the celebration.", flavour:"Eighty people are standing at the collection point with their pots. They're smiling.",
+          {text:"Go and ask. Bring a gift — a sack of your best grain.", outcome:"good", title:"Neighbourly Diplomacy", explanation:"They say yes. The gesture matters more than the grain. You gain two allies and save two days. This is how civilisation restarts.", budget:-5,schedule:15,team:5,sponsor:15},
+          {text:"Take the route without asking. Done before they notice.", outcome:"bad", title:"Trust Destroyed", explanation:"They notice within hours. They block the channel with rocks. The confrontation nearly turns violent. The council is furious.", budget:-10,schedule:-20,team:-10,sponsor:-25},
+          {text:"Use the longer route. Not worth the politics right now.", outcome:"neutral", title:"Keep the Peace", explanation:"Safe choice. Two extra days, no enemies made. Sometimes boring is right.", budget:0,schedule:-8,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Closing", title:"First Water Day",
+        situation:"The channel is complete. Water is flowing. But a section at the east end is seeping — losing about 20% of flow. The settlement is waiting for the celebration. Do you announce success or fix the leak first?",
+        flavour:"Eighty people are standing at the collection point with their pots. They're smiling.",
         choices:[
-          {text:"Celebrate now. Fix the seep quietly this week.", outcome:"good", title:"People Need This", explanation:"The celebration matters. Morale is oxygen. You fix the seep in two days and nobody knew.", budget:0,schedule:0,team:25,sponsor:15},
-          {text:"Announce the seep, delay two days to fix it first.", outcome:"neutral", title:"Honest Delay", explanation:"People are disappointed but respect the transparency.", budget:0,schedule:-5,team:-5,sponsor:10},
-          {text:"Say nothing about the seep, ever.", outcome:"bad", title:"Hidden Flaw", explanation:"It doesn't seal itself. Two weeks later it collapses. Four days of emergency repairs.", budget:-15,schedule:-15,team:-10,sponsor:-15},
-        ]},
+          {text:"Celebrate now. Fix the seep quietly this week.", outcome:"good", title:"People Need This", explanation:"The celebration matters. Morale is oxygen right now. You fix the seep in two days. Nobody knew it was a problem. Perfect execution.", budget:0,schedule:0,team:25,sponsor:15},
+          {text:"Announce the seep, delay two days to fix it first.", outcome:"neutral", title:"Honest Delay", explanation:"People are disappointed but respect the transparency. The council approves of your honesty.", budget:0,schedule:-5,team:-5,sponsor:10},
+          {text:"Say nothing about the seep, ever. It'll probably seal itself.", outcome:"bad", title:"Hidden Flaw", explanation:"It doesn't seal itself. Two weeks later the seep becomes a collapse. Four days of emergency repairs and some hard questions.", budget:-15,schedule:-15,team:-10,sponsor:-15},
+        ]
+      }
     ]
   },
   {
     id:"granary", emoji:"🌾", name:"The Winter Granary", era:"Day 67 · Northern Plateau", diff:"★★★☆☆", urgency:"URGENT",
+    intro:"Harvest is in. The settlement has enough food for 400 people through winter — barely. But food is scattered across 30 family cellars, rotting at different rates, being hoarded, and causing fights. You have 6 weeks before the first frost to build and run a communal granary.",
     scenes:[
-      { phase:"Initiation", title:"Will People Actually Give Up Their Food?", situation:"The granary only works if people contribute surplus. But people are afraid — last winter, three families starved. Will the settlement commit to shared storage?", flavour:"Ingrid has a cellar full of turnips. She would like to keep them.",
+      { phase:"Initiation", title:"Will People Actually Give Up Their Food?",
+        situation:"The granary is only useful if people contribute their surplus. But people are afraid. Last winter, three families starved. Before you build, you need to know: will the settlement actually commit to shared storage?",
+        flavour:"Ingrid has a cellar full of turnips. She would like to keep them.",
         choices:[
-          {text:"Community meeting. Get public commitment before you build.", outcome:"good", title:"Buy-In First", explanation:"Messy and emotional, but 34 of 38 families commit in front of neighbours. Social contract established.", budget:0,schedule:-5,team:10,sponsor:15},
-          {text:"Just build it. People will use it once it exists.", outcome:"bad", title:"Build It and They Won't Come", explanation:"The granary sits largely empty. Six weeks wasted on a building nobody trusts.", budget:-15,schedule:-5,team:-15,sponsor:-20},
-          {text:"Build and gather commitments simultaneously.", outcome:"neutral", title:"Show Progress, Build Trust", explanation:"Visible construction creates momentum. About half commit before completion.", budget:-5,schedule:5,team:5,sponsor:5},
-        ]},
-      { phase:"Planning", title:"Location Arguments", situation:"Three groups want the granary near their section. It can only be in one place. All three group leaders are in the room.", flavour:"Everyone agrees a granary is necessary. Nobody agrees where.",
+          {text:"Hold a community meeting. Get public commitment before you build.", outcome:"good", title:"Buy-In First", explanation:"Messy and emotional. Three people shout. But 34 of 38 families commit in front of their neighbours. Social contract established. Project has a foundation.", budget:0,schedule:-5,team:10,sponsor:15},
+          {text:"Just build it. People will use it once it exists.", outcome:"bad", title:"Build It and They Won't Come", explanation:"The granary is beautiful and sits largely empty. Families keep their food local. Six weeks of labour wasted on a building nobody trusts.", budget:-15,schedule:-5,team:-15,sponsor:-20},
+          {text:"Build and gather commitments simultaneously.", outcome:"neutral", title:"Show Progress, Build Trust", explanation:"Visible construction creates momentum. About half the families commit before completion. Enough to start, but gaps remain.", budget:-5,schedule:5,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Planning", title:"Location Arguments",
+        situation:"Three groups want the granary near their section. It can only be in one place. The council wants you to decide. All three group leaders are in the room. This is a political problem wearing an engineering hat.",
+        flavour:"Everyone agrees a granary is necessary. Nobody agrees where.",
         choices:[
-          {text:"Use objective criteria: drainage, centrality, build difficulty.", outcome:"good", title:"Evidence Wins", explanation:"The south-central site wins on every measure. Two of three groups accept the reasoning.", budget:5,schedule:5,team:5,sponsor:10},
-          {text:"Let the council vote. Not your call.", outcome:"neutral", title:"Delegated Decision", explanation:"The council deadlocks. A week of meetings before the western site wins by one vote.", budget:0,schedule:-10,team:0,sponsor:0},
-          {text:"Pick the site closest to the most powerful family.", outcome:"bad", title:"Political Choice", explanation:"The other two groups feel ignored. Contributions from their sections drop.", budget:0,schedule:5,team:-15,sponsor:-15},
-        ]},
-      { phase:"Execution", title:"The Carpenter Wants Paying", situation:"Jonas — your best carpenter — wants compensation beyond rations. Three weeks of his time, family of five. The council says no precedent. Jonas says he'll walk.", flavour:"Jonas is already good at saying no. The council is already good at saying no.",
+          {text:"Use objective criteria: drainage, centrality, build difficulty. Pick the best site.", outcome:"good", title:"Evidence Wins", explanation:"You map it out on paper. The south-central site wins on every measure. Two of three groups accept the reasoning. Third grumbles but agrees.", budget:5,schedule:5,team:5,sponsor:10},
+          {text:"Let the council vote. Not your call.", outcome:"neutral", title:"Delegated Decision", explanation:"The council deadlocks. A week of meetings before the western site wins by one vote. Politics, not engineering — but it gets decided.", budget:0,schedule:-10,team:0,sponsor:0},
+          {text:"Pick the site closest to the most powerful family. Avoid conflict.", outcome:"bad", title:"Political Choice", explanation:"The other two groups feel ignored. Contributions from their sections drop. You've built mistrust into the foundation.", budget:0,schedule:5,team:-15,sponsor:-15},
+        ]
+      },
+      { phase:"Execution", title:"The Carpenter Wants Paying",
+        situation:"Your most skilled carpenter — Jonas — says he needs compensation beyond food rations. He has a family of five and this is three weeks of his time. The council says there's no precedent for paid work. Jonas says he'll walk.",
+        flavour:"Jonas is already good at saying no. The council is already good at saying no. You are between them.",
         choices:[
-          {text:"Advocate for Jonas. The council needs to set a fair work precedent.", outcome:"good", title:"Fair Value", explanation:"After negotiation, Jonas gets extra grain and priority access. You've helped establish the settlement's first labour framework.", budget:-10,schedule:0,team:15,sponsor:5},
-          {text:"Ask Jonas to work for free. 'We're all rebuilding together.'", outcome:"bad", title:"Free Rider Problem", explanation:"Jonas leaves. The roof joints are weak. First heavy snow partially collapses a corner.", budget:-20,schedule:-20,team:-15,sponsor:-10},
-          {text:"Offer Jonas future priority access. No precedent.", outcome:"neutral", title:"Creative Compromise", explanation:"Jonas accepts. Not ideal for either side but the work gets done.", budget:0,schedule:5,team:5,sponsor:0},
-        ]},
-      { phase:"Execution", title:"Rats", situation:"The foundation area has a significant rat population already getting into test grain. Delay and fix foundations, build raised storage, or press on?", flavour:"A rat sits on a sack of wheat and stares at you with absolutely no remorse.",
+          {text:"Advocate for Jonas. The council needs to set a fair work precedent.", outcome:"good", title:"Fair Value", explanation:"After tense negotiation, Jonas gets extra grain and priority granary access. You've also just helped establish the settlement's first labour framework. Important.", budget:-10,schedule:0,team:15,sponsor:5},
+          {text:"Ask Jonas to work for free. 'We're all rebuilding together.'", outcome:"bad", title:"Free Rider Problem", explanation:"Jonas leaves. Without him, the roof joints are weak. The first heavy snow partially collapses a corner. Emergency repairs cost more than Jonas would have.", budget:-20,schedule:-20,team:-15,sponsor:-10},
+          {text:"Offer Jonas future priority access to granary resources. No precedent.", outcome:"neutral", title:"Creative Compromise", explanation:"Jonas accepts. Not ideal for either side but the work gets done. The precedent question remains unresolved — a future problem.", budget:0,schedule:5,team:5,sponsor:0},
+        ]
+      },
+      { phase:"Execution", title:"Rats",
+        situation:"Three weeks in. The foundation area has a significant rat population already getting into test grain. You can delay and fix the foundations, build raised storage and manage ongoing, or press on.",
+        flavour:"A rat sits on a sack of wheat and stares at you with absolutely no remorse.",
         choices:[
-          {text:"Delay, dig proper foundations, lay stone rats can't breach.", outcome:"good", title:"Do It Right", explanation:"One week delay but zero rat losses this winter. The settlement uses the granary for fifteen years.", budget:-8,schedule:-8,team:0,sponsor:5},
-          {text:"Build raised platforms. Manage with cats and traps.", outcome:"neutral", title:"Managed Risk", explanation:"Platforms work well. You lose about 5% of stored grain. Acceptable.", budget:-3,schedule:5,team:5,sponsor:0},
-          {text:"Press on. Rats aren't the main threat.", outcome:"bad", title:"Rat Crisis", explanation:"Rats destroy 18% of stored grain by January. A family goes hungry. The council calls a review.", budget:-5,schedule:10,team:-10,sponsor:-20},
-        ]},
-      { phase:"Closing", title:"The Allocation System", situation:"The granary is full. Now you need a system: equal shares, proportional to contribution, or council discretion. This decision defines the settlement's values.", flavour:"The granary is full. Everyone is watching how you answer this question.",
+          {text:"Delay, dig proper foundations, lay stone rats can't breach.", outcome:"good", title:"Do It Right", explanation:"One week delay but zero rat losses this winter. The settlement uses the granary for fifteen years. Jonas says it's the best thing he ever built.", budget:-8,schedule:-8,team:0,sponsor:5},
+          {text:"Build raised platforms. Manage with cats and traps.", outcome:"neutral", title:"Managed Risk", explanation:"The platforms work well. You lose about 5% of stored grain. Acceptable. The cats help a lot.", budget:-3,schedule:5,team:5,sponsor:0},
+          {text:"Press on. You're out of time and rats aren't the main threat.", outcome:"bad", title:"Rat Crisis", explanation:"Rats destroy 18% of stored grain by January. A family goes hungry. The council calls a review. Your name is not celebrated.", budget:-5,schedule:10,team:-10,sponsor:-20},
+        ]
+      },
+      { phase:"Closing", title:"The Allocation System",
+        situation:"The granary is built and full. Now you need a system: equal shares for all, shares proportional to contribution, or council discretion case-by-case. This decision will define the settlement's values.",
+        flavour:"The granary is full. Everyone is watching how you answer this question.",
         choices:[
-          {text:"Equal shares regardless of contribution.", outcome:"neutral", title:"Pure Equality", explanation:"Fair but creates a contribution problem. Three families contributed less next season.", budget:0,schedule:0,team:5,sponsor:-5},
-          {text:"Proportional shares with a guaranteed minimum for everyone.", outcome:"good", title:"Fair + Safety Net", explanation:"Contributions go up next season. People feel the system is just.", budget:5,schedule:0,team:15,sponsor:20},
-          {text:"Council decides case-by-case. Flexibility matters.", outcome:"bad", title:"Corruption Risk", explanation:"Within a month, accusations of favouritism. The granary becomes a source of conflict.", budget:0,schedule:0,team:-15,sponsor:-20},
-        ]},
+          {text:"Equal shares. Everyone eats the same regardless of contribution.", outcome:"neutral", title:"Pure Equality", explanation:"Fair but creates a contribution problem. Three families contributed less next season. A precedent that needs revisiting.", budget:0,schedule:0,team:5,sponsor:-5},
+          {text:"Proportional shares with a guaranteed minimum for everyone.", outcome:"good", title:"Fair + Safety Net", explanation:"This is the right answer. Three hours to explain, one hour to agree. Contributions go up next season. People feel the system is just.", budget:5,schedule:0,team:15,sponsor:20},
+          {text:"Council decides case-by-case. Flexibility matters.", outcome:"bad", title:"Corruption Risk", explanation:"Within a month, accusations of favouritism. The granary becomes a source of conflict rather than unity.", budget:0,schedule:0,team:-15,sponsor:-20},
+        ]
+      }
+    ]
+  },
+  {
+    id:"clinic", emoji:"⚕️", name:"The Field Clinic", era:"Day 43 · Crossroads Camp", diff:"★★★☆☆", urgency:"CRITICAL",
+    intro:"Four survivor groups have converged at your crossroads — 1,200 people, one former nurse, two people who vaguely remember first aid, and medicines that run out in 60 days. You need to build a functional clinic from nothing and train people to run it.",
+    scenes:[
+      { phase:"Initiation", title:"What Do We Actually Have?",
+        situation:"Before building anything, you need to know what medical supplies and skills exist across all four groups. Nobody has done an audit. People are hoarding medicines. The former nurse — Dakarai — says an inventory is step one. Some group leaders resist.",
+        flavour:"Dakarai has the kind of calm that comes from having seen everything. 'We audit or people die. Pick one.'",
+        choices:[
+          {text:"Full open audit. All groups disclose everything.", outcome:"good", title:"Full Transparency", explanation:"Tense but transformative. The combined inventory reveals three months of antibiotics, not one. Two hidden stockpiles of crucial wound supplies. More than you thought.", budget:20,schedule:5,team:5,sponsor:15},
+          {text:"Voluntary disclosure only. Don't push.", outcome:"neutral", title:"Partial Picture", explanation:"You get about 70% of what exists. Enough to plan. Hidden supplies cause surprises mid-project but nothing fatal.", budget:5,schedule:0,team:5,sponsor:0},
+          {text:"Skip the audit. Build the clinic first.", outcome:"bad", title:"Building Without Knowing", explanation:"Two weeks in you discover you've been planning around half the medicine supply you assumed. Major replanning required.", budget:-15,schedule:-15,team:-5,sponsor:-10},
+        ]
+      },
+      { phase:"Planning", title:"Who Runs It?",
+        situation:"Dakarai can't be the only clinician. She proposes training 12 people over 3 weeks in triage, wound care, fever management, childbirth. But those 12 are doing essential work. The council says you can only take 6.",
+        flavour:"Dakarai looks at you steadily. 'Six is not enough,' she says.",
+        choices:[
+          {text:"Push back hard. Argue for 12. This is non-negotiable.", outcome:"good", title:"Advocate for What's Right", explanation:"You make the case with mortality projections. The council concedes 9. Not 12, but Dakarai can work with 9.", budget:-5,schedule:-5,team:5,sponsor:5},
+          {text:"Accept 6. Work within the constraint.", outcome:"bad", title:"Understaffed Clinic", explanation:"With only 6 trainees, the clinic is overwhelmed in the first week. Dakarai works 20-hour days. She gets sick. The clinic nearly closes.", budget:5,schedule:5,team:-15,sponsor:-10},
+          {text:"Accept 6 now, negotiate a second cohort of 6 next month.", outcome:"neutral", title:"Phased Training", explanation:"Reasonable compromise. The first cohort handles the first month. The second means the clinic scales correctly by week 6.", budget:0,schedule:-5,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Execution", title:"The Medicine Dispute",
+        situation:"Group Three has kept their antibiotics private — disclosed in the audit but won't hand them over. Their leader says: 'Our people get treated first.' A direct challenge to the shared model.",
+        flavour:"Group Three has 47 people and about 200 doses of amoxicillin. And they have decided.",
+        choices:[
+          {text:"Negotiate: their people get priority access, not exclusive.", outcome:"good", title:"Principled Compromise", explanation:"After a hard conversation, they agree. Priority access for 30 days, then integrated. They feel heard. The antibiotics join the shared pool.", budget:15,schedule:0,team:5,sponsor:10},
+          {text:"Refuse anything less than full integration. Escalate to council.", outcome:"neutral", title:"Hard Line", explanation:"The council supports you after a week of tense mediation. Group Three complies but is unhappy. The medicines are integrated. Relations are strained.", budget:5,schedule:-10,team:-5,sponsor:5},
+          {text:"Accept their terms. Their group gets priority treatment forever.", outcome:"bad", title:"Two-Tier Medicine", explanation:"The other three groups find out within a week. Two withdraw from the shared model. The clinic fractures into four operations nobody can sustain.", budget:-5,schedule:-10,team:-20,sponsor:-20},
+        ]
+      },
+      { phase:"Execution", title:"An Outbreak",
+        situation:"Day 12. A gastrointestinal outbreak — probably upstream contamination. Forty people sick. The clinic has capacity for fifteen. Turn people away, triage ruthlessly, or move treatment outside?",
+        flavour:"People are queuing at the clinic door before dawn. Dakarai has not slept.",
+        choices:[
+          {text:"Outdoor triage station. Mild cases outside, severe cases inside.", outcome:"good", title:"Adaptive Expansion", explanation:"You treat 80 people with resources for 15 by tiering care. Nobody dies. Dakarai calls it your best decision.", budget:-8,schedule:-5,team:10,sponsor:15},
+          {text:"Strict triage — only most severe cases treated.", outcome:"neutral", title:"Hard Triage", explanation:"Medically correct. Emotionally brutal. No deaths but the clinic's reputation suffers.", budget:0,schedule:0,team:-10,sponsor:-5},
+          {text:"Treat everyone. Nobody gets turned away.", outcome:"bad", title:"Capacity Collapse", explanation:"The clinic is overwhelmed. Dakarai makes a critical dosing error from exhaustion. The clinic closes for two days to reset.", budget:-15,schedule:-15,team:-15,sponsor:-15},
+        ]
+      },
+      { phase:"Closing", title:"Making It Permanent",
+        situation:"The clinic works. The council wants to formally adopt it — but also wants to replace Dakarai with a committee to 'oversee medical decisions.' Dakarai says that's dangerous. You agree.",
+        flavour:"Dakarai is not political. She is simply right about medicine.",
+        choices:[
+          {text:"Defend Dakarai's clinical authority. Committee oversees resources, not decisions.", outcome:"good", title:"Right Structure", explanation:"Clinical authority stays with the clinician. Administrative oversight to the council. The model holds. Everyone lives.", budget:0,schedule:0,team:15,sponsor:10},
+          {text:"Let the council have oversight of everything. You need their support.", outcome:"bad", title:"Committee Medicine", explanation:"The committee overrules Dakarai on a treatment decision three weeks later. She resigns. A preventable death follows.", budget:0,schedule:0,team:-20,sponsor:-15},
+          {text:"Trial period — committee observes but can't overrule for 60 days.", outcome:"neutral", title:"Watched Trial", explanation:"The committee mostly learns. After 60 days the model is formally adopted with clinical autonomy intact. Long way around but you got there.", budget:0,schedule:-5,team:5,sponsor:5},
+        ]
+      }
     ]
   },
   {
     id:"bridge", emoji:"🪵", name:"The Log Bridge", era:"Day 156 · River Crossing", diff:"★★★★☆", urgency:"HIGH",
+    intro:"The river divides your settlement from the best farmland, the forest, and two allied communities. The old road bridge is a tangle of cracked concrete and dead cars. You've been asked to build a functional crossing before spring planting. You have timber, rope, stone, and people who've never built a bridge.",
     scenes:[
-      { phase:"Initiation", title:"How Wide, How Strong, How Fast?", situation:"The river is 22 metres wide. Rope bridge (fast, foot traffic), heavy timber bridge (two months, carries carts), or repair the crumbled concrete bridge (unknown difficulty)?", flavour:"The farmland on the other side is visible. It is very green. People are hungry.",
+      { phase:"Initiation", title:"How Wide, How Strong, How Fast?",
+        situation:"The river is 22 metres wide. Three options: rope and plank bridge (fast, good for people and light loads), heavy timber bridge (two months, carries carts), or attempting to repair the old concrete bridge (unknown difficulty).",
+        flavour:"The farmland on the other side is visible from here. It is very green. People are hungry.",
         choices:[
-          {text:"Rope bridge first. Farm now, upgrade later.", outcome:"good", title:"Get People Across", explanation:"Done in 8 days. Spring planting starts on time. The harvest saves people.", budget:5,schedule:20,team:10,sponsor:10},
-          {text:"Heavy timber bridge. Do it once, do it right.", outcome:"neutral", title:"Built to Last", explanation:"Spring planting delayed three weeks but the bridge carries carts for decades.", budget:-10,schedule:-15,team:5,sponsor:0},
-          {text:"Attempt to repair the concrete bridge.", outcome:"bad", title:"Unknown Complexity", explanation:"Nobody can assess concrete structural damage. Two weeks lost, nothing started.", budget:-10,schedule:-20,team:-10,sponsor:-15},
-        ]},
-      { phase:"Planning", title:"Who's Responsible If It Fails?", situation:"The council asks: what if someone falls? What if a cart goes in? You need a governance framework nobody has written yet.", flavour:"The council is aware this sounds absurd. They ask anyway.",
+          {text:"Rope bridge first. Farm now, upgrade later.", outcome:"good", title:"Get People Across", explanation:"The rope bridge is done in 8 days. Spring planting starts on time. You schedule the timber bridge for summer. The harvest saves people.", budget:5,schedule:20,team:10,sponsor:10},
+          {text:"Heavy timber bridge. Do it once, do it right.", outcome:"neutral", title:"Built to Last", explanation:"Spring planting delayed three weeks but the bridge carries carts. You lose some growing season but gain infrastructure that lasts decades.", budget:-10,schedule:-15,team:5,sponsor:0},
+          {text:"Attempt to repair the concrete bridge.", outcome:"bad", title:"Unknown Complexity", explanation:"Nobody can assess concrete structural damage. Two weeks of investigation reveals it's far beyond your capability. You've started nothing.", budget:-10,schedule:-20,team:-10,sponsor:-15},
+        ]
+      },
+      { phase:"Planning", title:"Who's Responsible If It Fails?",
+        situation:"The council asks: what if someone falls? What if a cart goes in? This is your first real governance question since the flare. You need a framework nobody has written yet.",
+        flavour:"The council is aware this sounds absurd. They ask anyway.",
         choices:[
-          {text:"Draft a community responsibility document — shared risk, shared benefit.", outcome:"good", title:"First Governance", explanation:"One evening's work. Sets precedent, reduces fear, increases buy-in. You've accidentally written a constitution.", budget:0,schedule:-3,team:10,sponsor:20},
-          {text:"Skip it. Nobody's suing anyone. We're survivors.", outcome:"neutral", title:"Pragmatic Skip", explanation:"Fine for now. When a cart tips through a plank later, the argument is ugly.", budget:5,schedule:5,team:0,sponsor:-5},
-          {text:"Let the council take full responsibility.", outcome:"bad", title:"Ownership Vacuum", explanation:"The council panics and quietly shelves the project. Two weeks lost.", budget:0,schedule:-15,team:-5,sponsor:-20},
-        ]},
-      { phase:"Execution", title:"The Timber Problem", situation:"The nearest trees are in a grove a local family has been restoring as an orchard. The next-nearest timber adds four days of hauling.", flavour:"The family planted those saplings by hand. Every morning they water them.",
+          {text:"Draft a simple community responsibility document — shared risk, shared benefit.", outcome:"good", title:"First Governance", explanation:"Takes one evening. Sets precedent for shared infrastructure. Reduces fear and increases volunteer buy-in. You've accidentally written a constitution.", budget:0,schedule:-3,team:10,sponsor:20},
+          {text:"Skip it. Nobody's suing anyone. We're survivors.", outcome:"neutral", title:"Pragmatic Skip", explanation:"Fine for now. When a cart tips through a plank six weeks later, the argument about responsibility is ugly. You deal with it then.", budget:5,schedule:5,team:0,sponsor:-5},
+          {text:"Let the council take full responsibility. Not your problem.", outcome:"bad", title:"Ownership Vacuum", explanation:"The council panics when pressed and quietly shelves the project for 'further review.' Two weeks lost.", budget:0,schedule:-15,team:-5,sponsor:-20},
+        ]
+      },
+      { phase:"Execution", title:"The Timber Problem",
+        situation:"The nearest suitable trees are in a grove a local family has been managing as an orchard recovery project for two months. Cutting those trees destroys their work. The next-nearest timber adds four days of hauling.",
+        flavour:"The family planted those saplings by hand. Every morning they water them.",
         choices:[
-          {text:"Take the four extra days. Their orchard is their future.", outcome:"good", title:"Long View", explanation:"The orchard family becomes your most committed supporters for every future project.", budget:-5,schedule:-12,team:15,sponsor:10},
-          {text:"Negotiate — take some timber, help them replant.", outcome:"neutral", title:"Fair Deal", explanation:"They're not happy but accept. You lose two days to replanting effort.", budget:-3,schedule:-5,team:5,sponsor:5},
-          {text:"Take the closest timber. The bridge serves more people.", outcome:"bad", title:"Utilitarian Mistake", explanation:"Word spreads that the council takes what it wants. Volunteer turnout drops 40%.", budget:10,schedule:5,team:-20,sponsor:-15},
-        ]},
-      { phase:"Execution", title:"Flood Warning", situation:"Day 11. Six logs span the river. A scout reports a possible flash flood in 36 hours. Rush to finish, pull back, or leave and hope?", flavour:"The sky upstream is a colour that experienced people don't like.",
+          {text:"Take the four extra days. Their orchard is their future.", outcome:"good", title:"Long View", explanation:"The orchard family becomes your most committed supporters, contributing to every future project. Some decisions compound.", budget:-5,schedule:-12,team:15,sponsor:10},
+          {text:"Negotiate — take some of their timber, help them replant.", outcome:"neutral", title:"Fair Deal", explanation:"They're not happy but accept. You lose two days to replanting effort. The relationship survives.", budget:-3,schedule:-5,team:5,sponsor:5},
+          {text:"Take the closest timber. The bridge serves more people than the orchard.", outcome:"bad", title:"Utilitarian Mistake", explanation:"Word spreads that the council takes what it wants. Volunteer turnout for the next three projects drops 40%.", budget:10,schedule:5,team:-20,sponsor:-15},
+        ]
+      },
+      { phase:"Execution", title:"Flood Warning",
+        situation:"Day 11 of construction. Six logs span the river and your foundations are in. A scout reports heavy rain upstream — possible flash flood in 36 hours. Rush to finish, pull back materials, or leave them and hope?",
+        flavour:"The sky upstream is a colour that experienced people don't like.",
         choices:[
-          {text:"Controlled pullback. Secure what you can.", outcome:"good", title:"Protect the Progress", explanation:"The flood is significant. Protected materials survive. You resume intact.", budget:0,schedule:-5,team:5,sponsor:5},
-          {text:"Sprint to finish before the flood. All hands, all night.", outcome:"bad", title:"Rushed to Ruin", explanation:"You reach 80% before it hits. Partial collapse, two weeks lost, three people hurt.", budget:-20,schedule:-20,team:-15,sponsor:-10},
-          {text:"Leave it. The structure is solid enough.", outcome:"neutral", title:"Calculated Gamble", explanation:"Smaller flood than feared. Some materials lost, three days of repair.", budget:-8,schedule:-8,team:5,sponsor:0},
-        ]},
-      { phase:"Closing", title:"Opening Day", situation:"Complete — but your lead builder Tema tells you one cross-beam is weaker than spec. Holds foot traffic. Won't safely hold heavy carts. Ceremony is tomorrow.", flavour:"Tema looks at you. You look at Tema.",
+          {text:"Controlled pullback. Remove what you can, secure the foundations.", outcome:"good", title:"Protect the Progress", explanation:"The flood is significant. Unprotected materials would have been destroyed. Foundations hold. You resume with materials intact.", budget:0,schedule:-5,team:5,sponsor:5},
+          {text:"Sprint to finish before the flood. All hands, all night.", outcome:"bad", title:"Rushed to Ruin", explanation:"You reach 80% before the flood hits. The unfinished structure partially collapses. Two weeks of work lost and three people hurt in the night rush.", budget:-20,schedule:-20,team:-15,sponsor:-10},
+          {text:"Leave it. The structure is solid enough to survive.", outcome:"neutral", title:"Calculated Gamble", explanation:"The flood is smaller than feared. Some materials lost, some logs shift. Three days of repair, but the core holds.", budget:-8,schedule:-8,team:5,sponsor:0},
+        ]
+      },
+      { phase:"Closing", title:"Opening Day",
+        situation:"The bridge is complete. Your lead builder — Tema — tells you privately that one cross-beam connection is weaker than spec. It will hold foot traffic. It won't safely hold heavy carts. The opening ceremony is tomorrow.",
+        flavour:"Tema looks at you. You look at Tema. Tomorrow is the ceremony.",
         choices:[
-          {text:"Tell the council, delay the ceremony, fix the beam.", outcome:"good", title:"Do Right", explanation:"Fixed in half a day. Opening the next morning. Bridge carries carts safely for years.", budget:-3,schedule:-3,team:5,sponsor:10},
-          {text:"Open for foot traffic only. Announce cart restrictions publicly.", outcome:"good", title:"Honest Partial Opening", explanation:"Everyone understands. Restriction is respected. You fix the beam that week.", budget:0,schedule:0,team:5,sponsor:10},
-          {text:"Open as planned. That beam is probably fine.", outcome:"bad", title:"Collapse", explanation:"A grain cart crosses on day three. The beam fails. Cart and grain into the river.", budget:-20,schedule:-20,team:-15,sponsor:-25},
-        ]},
+          {text:"Tell the council, delay the ceremony, fix the beam.", outcome:"good", title:"Do Right", explanation:"The council is annoyed. You fix it in half a day. The opening is the next morning. The bridge carries carts safely for years.", budget:-3,schedule:-3,team:5,sponsor:10},
+          {text:"Open for foot traffic only. Announce cart restrictions publicly.", outcome:"good", title:"Honest Partial Opening", explanation:"Nobody is thrilled but everyone understands. The restriction is respected. You fix the beam that week. Transparent and safe.", budget:0,schedule:0,team:5,sponsor:10},
+          {text:"Open as planned. That beam is probably fine.", outcome:"bad", title:"Collapse", explanation:"A cart loaded with grain crosses on day three. The beam fails. Cart and grain go into the river. Nobody seriously hurt — barely. Bridge closes two weeks.", budget:-20,schedule:-20,team:-15,sponsor:-25},
+        ]
+      }
     ]
   },
   {
     id:"school", emoji:"📖", name:"The First School", era:"Day 201 · Hillside Settlement", diff:"★★☆☆☆", urgency:"MEDIUM",
+    intro:"90 children under 14 haven't had formal education since the flare. Most are working — carrying water, tending crops, learning trades. The council has agreed education matters. You've been asked to create a school from nothing. No textbooks. No electricity. No curriculum. Just you, some adults who remember things, and a lot of kids.",
     scenes:[
-      { phase:"Initiation", title:"What Are We Even Teaching?", situation:"Five adult volunteers. You can't teach everything. What matters most right now?", flavour:"The kids are watching from a safe distance. Some look hopeful. Some look suspicious.",
+      { phase:"Initiation", title:"What Are We Even Teaching?",
+        situation:"Five adults volunteer to teach: a former maths teacher, a retired doctor, a mechanic, a former librarian, and a farmer. You can't teach everything. You have to choose what matters most right now.",
+        flavour:"The kids are watching from a safe distance. Some look hopeful. Some look suspicious.",
         choices:[
-          {text:"Survival skills: farming, medicine, construction, water.", outcome:"neutral", title:"Practical Curriculum", explanation:"Kids learn useful things. But without literacy they can't learn independently.", budget:5,schedule:10,team:5,sponsor:0},
-          {text:"Literacy and numeracy core, survival skills woven in.", outcome:"good", title:"Foundation First", explanation:"Reading and numbers unlock everything else. Within eight weeks kids are teaching each other.", budget:0,schedule:5,team:10,sponsor:15},
-          {text:"Let families choose what their children learn.", outcome:"bad", title:"Fragmented Learning", explanation:"Every family pulls in a different direction. After six weeks the initiative dissolves.", budget:5,schedule:-15,team:-10,sponsor:-15},
-        ]},
-      { phase:"Planning", title:"The Building Problem", situation:"No building. Large barn (cold, dark), build a structure (three weeks delay), or outside (weather-dependent). Two teachers won't do outdoor classes.", flavour:"It is not yet winter. But it will be.",
+          {text:"Survival skills first: farming, medicine basics, construction, water management.", outcome:"neutral", title:"Practical Curriculum", explanation:"Kids learn things with immediate value. But without literacy and numeracy they can't learn independently. A partial foundation.", budget:5,schedule:10,team:5,sponsor:0},
+          {text:"Literacy and numeracy as the core, survival skills woven in.", outcome:"good", title:"Foundation First", explanation:"Reading and numbers unlock everything else. Within eight weeks kids are writing messages, calculating seed ratios, and teaching each other. The foundation multiplies.", budget:0,schedule:5,team:10,sponsor:15},
+          {text:"Let families choose what their children learn. Respect autonomy.", outcome:"bad", title:"Fragmented Learning", explanation:"Every family pulls their child in a different direction. The school has no cohesion. After six weeks the initiative quietly dissolves.", budget:5,schedule:-15,team:-10,sponsor:-15},
+        ]
+      },
+      { phase:"Planning", title:"The Building Problem",
+        situation:"No building. Options: use the large empty barn (cold, dark, noisy), build a dedicated structure (three weeks), or run classes outside (weather-dependent but now). Two of your five teachers won't do outdoor classes.",
+        flavour:"It is not yet winter. But it will be.",
         choices:[
-          {text:"Outdoor now, barn in autumn, permanent structure next spring.", outcome:"good", title:"Phased Delivery", explanation:"School starts immediately. Barn improved before winter. By spring you know what you need.", budget:-3,schedule:10,team:10,sponsor:10},
-          {text:"Wait for a permanent building.", outcome:"bad", title:"Three Weeks Lost", explanation:"Some families put kids back to work and don't bring them back.", budget:-10,schedule:-15,team:-5,sponsor:-5},
-          {text:"Use the barn from day one. Fix it as you go.", outcome:"neutral", title:"Barn School", explanation:"Cold and rough but functional. Two teachers complain. Kids adapt faster than adults.", budget:0,schedule:5,team:0,sponsor:5},
-        ]},
-      { phase:"Execution", title:"Parents Who Won't Send Their Kids", situation:"Twelve families keeping children out — work, distrust, one bad cult experience post-flare.", flavour:"You understand all their reasons. That doesn't make them less wrong.",
+          {text:"Outdoor now, barn in autumn, permanent structure next spring.", outcome:"good", title:"Phased Delivery", explanation:"School starts immediately. Barn is improved before winter. By spring you know exactly what you need for a permanent building.", budget:-3,schedule:10,team:10,sponsor:10},
+          {text:"Wait for a permanent building. Do it right.", outcome:"bad", title:"Three Weeks Lost", explanation:"Three weeks of no school. Some families put kids back to work and don't bring them back. Momentum is hard to rebuild.", budget:-10,schedule:-15,team:-5,sponsor:-5},
+          {text:"Use the barn from day one. Fix it up as you go.", outcome:"neutral", title:"Barn School", explanation:"Cold and rough but functional. Two teachers complain constantly. Kids adapt faster than adults. Classes run.", budget:0,schedule:5,team:0,sponsor:5},
+        ]
+      },
+      { phase:"Execution", title:"Parents Who Won't Send Their Kids",
+        situation:"Twelve families are keeping children out. Reasons vary: needed for work, distrust of communal institutions, one family believes communal education is dangerous after a bad cult experience in the first months post-flare.",
+        flavour:"You understand all their reasons. That doesn't make them less wrong.",
         choices:[
-          {text:"Visit each family personally. Listen first, then ask.", outcome:"good", title:"One at a Time", explanation:"Nine families send their kids after a conversation. Nine out of twelve is real progress.", budget:0,schedule:-5,team:10,sponsor:10},
-          {text:"Make school mandatory. Council policy.", outcome:"bad", title:"Forced Compliance", explanation:"Three families leave the settlement. Mandatory attendance doesn't work without trust.", budget:-5,schedule:5,team:-15,sponsor:-20},
-          {text:"Invite parents to sit in on classes.", outcome:"neutral", title:"Open Doors", explanation:"Seven of twelve send their kids after sitting in.", budget:0,schedule:0,team:5,sponsor:10},
-        ]},
-      { phase:"Execution", title:"The Teacher Quits", situation:"Marcus, your best maths teacher, is leaving for a larger settlement with better food. One week before he goes.", flavour:"Marcus taught for 30 years. He misses being a professional.",
+          {text:"Visit each family personally. Listen first, then ask.", outcome:"good", title:"One at a Time", explanation:"Time-consuming but nine families send their kids after a conversation. Three don't. You respect their choice. Nine out of twelve is real progress.", budget:0,schedule:-5,team:10,sponsor:10},
+          {text:"Make school mandatory. Council policy.", outcome:"bad", title:"Forced Compliance", explanation:"Three families leave the settlement. Two more consider it. Mandatory attendance already failed once — it doesn't work without trust.", budget:-5,schedule:5,team:-15,sponsor:-20},
+          {text:"Invite parents to sit in on classes. Make it transparent.", outcome:"neutral", title:"Open Doors", explanation:"Seven of twelve families send their kids after sitting in. Openness improves community relations even with the five who stay out.", budget:0,schedule:0,team:5,sponsor:10},
+        ]
+      },
+      { phase:"Execution", title:"The Teacher Quits",
+        situation:"Marcus, your maths teacher, is leaving — offered a place at a larger settlement with better food and a formal teaching role. He's your best teacher. You have one week before he goes.",
+        flavour:"Marcus taught for 30 years before the flare. He misses being a professional.",
         choices:[
-          {text:"Let him go. Ask him to train a replacement first.", outcome:"good", title:"Knowledge Transfer", explanation:"Marcus spends his last week training Elena and writing lesson guides. You lose Marcus and keep Marcus. Mostly.", budget:0,schedule:-3,team:5,sponsor:5},
-          {text:"Offer Marcus everything — best rations, best housing.", outcome:"neutral", title:"Retention Bid", explanation:"He stays another month but his heart isn't in it. When he leaves, the knowledge goes too.", budget:-15,schedule:5,team:-5,sponsor:-5},
-          {text:"Ask the council to block the transfer.", outcome:"bad", title:"Compelled to Stay", explanation:"The council refuses. Marcus is furious. The settlement he joins stops cooperating for three months.", budget:0,schedule:-5,team:-10,sponsor:-15},
-        ]},
-      { phase:"Closing", title:"The First Cohort Graduates", situation:"Eight weeks in. 45 kids can read, write, and do basic arithmetic. The council wants a quiet acknowledgement.", flavour:"The kids made signs. They are not subtle.",
+          {text:"Let him go gracefully. Ask him to train a replacement before he leaves.", outcome:"good", title:"Knowledge Transfer", explanation:"Marcus spends his last week writing lesson guides and teaching Elena, a quick learner, his core curriculum. You lose Marcus and keep Marcus. Mostly.", budget:0,schedule:-3,team:5,sponsor:5},
+          {text:"Offer Marcus everything you can — best rations, best housing.", outcome:"neutral", title:"Retention Bid", explanation:"He stays another month but his heart isn't in it. When he leaves, the knowledge goes with him anyway. You delayed the problem at cost.", budget:-15,schedule:5,team:-5,sponsor:-5},
+          {text:"Ask the council to block the transfer.", outcome:"bad", title:"Compelled to Stay", explanation:"The council refuses. Marcus is furious and leaves anyway. The settlement he joins stops cooperating with yours for three months.", budget:0,schedule:-5,team:-10,sponsor:-15},
+        ]
+      },
+      { phase:"Closing", title:"The First Cohort Graduates",
+        situation:"Eight weeks in. Forty-five kids can read, write, do basic arithmetic, and have practical skills. The council wants a quiet acknowledgement. The community is exhausted and celebrations feel self-indulgent.",
+        flavour:"The kids made signs. They are not subtle.",
         choices:[
-          {text:"Full community celebration.", outcome:"good", title:"We Celebrate This", explanation:"The best afternoon the settlement has had. Three parents who kept kids home sign them up the next day.", budget:-5,schedule:0,team:25,sponsor:15},
-          {text:"Simple acknowledgement at the council meeting.", outcome:"neutral", title:"Quiet Recognition", explanation:"Dignified. Misses an opportunity to build collective identity.", budget:0,schedule:0,team:5,sponsor:5},
-          {text:"Skip the ceremony. No time.", outcome:"bad", title:"No Recognition", explanation:"Teachers deflated. Two reduce their hours. The kids notice.", budget:5,schedule:5,team:-15,sponsor:-10},
-        ]},
+          {text:"Full community celebration. These children learned in hard circumstances.", outcome:"good", title:"We Celebrate This", explanation:"The best afternoon the settlement has had. People laugh. Three parents who kept children home come to watch and sign them up the next day.", budget:-5,schedule:0,team:25,sponsor:15},
+          {text:"Simple acknowledgement at the council meeting.", outcome:"neutral", title:"Quiet Recognition", explanation:"Dignified. Misses an opportunity to build collective identity, but that's recoverable.", budget:0,schedule:0,team:5,sponsor:5},
+          {text:"Skip the ceremony. We don't have time for this.", outcome:"bad", title:"No Recognition", explanation:"Teachers are deflated. Two reduce their hours the following week. The kids notice. Morale in the school drops for a month.", budget:5,schedule:5,team:-15,sponsor:-10},
+        ]
+      }
     ]
   },
   {
     id:"radio", emoji:"📡", name:"The Signal Tower", era:"Day 89 · High Ridge", diff:"★★★★☆", urgency:"HIGH",
+    intro:"Communication between settlements is done by runner — a day's walk each way. A former radio engineer in your group says a hand-cranked shortwave radio and a 15-metre signal tower could connect your settlement to four others. No electricity. Just antenna physics, salvaged copper wire, and engineering.",
     scenes:[
-      { phase:"Initiation", title:"Can We Actually Build This?", situation:"Yusuf says a hand-cranked shortwave tower could link four settlements — but needs parts from the dead-zone city 12km away. Unstable, partially claimed by a hostile group.", flavour:"Yusuf drew the circuit on the back of a cereal box. It looks right. Probably.",
+      { phase:"Initiation", title:"Can We Actually Build This?",
+        situation:"Yusuf, the radio engineer, says it's possible — but needs parts salvaged from cars and electronics in the dead zone city 12km away. The city is structurally unstable and some sections are claimed by an unfriendly group.",
+        flavour:"Yusuf has drawn the circuit on the back of a cereal box. It looks right. Probably.",
         choices:[
-          {text:"Full scavenging expedition. Get everything in one trip.", outcome:"good", title:"Calculated Risk", explanation:"The team returns with three times what was needed. Spares for repairs. The risk was worth it.", budget:15,schedule:10,team:5,sponsor:10},
-          {text:"Small scouting party first. Assess before committing.", outcome:"neutral", title:"Scout First", explanation:"Delays four days but reveals the city is safer than feared. The hostile group has moved on.", budget:0,schedule:-8,team:5,sponsor:5},
-          {text:"Work only with local materials. No city trip.", outcome:"bad", title:"Underpowered Build", explanation:"Signal reaches only one settlement, weakly. A fraction of what it could have been.", budget:5,schedule:5,team:-5,sponsor:-15},
-        ]},
-      { phase:"Planning", title:"Which Settlements Connect First?", situation:"You can only connect two in phase one. Three are asking: northern farming community, southern medical group, eastern tool-makers.", flavour:"All three leaders are at the meeting.",
+          {text:"Full scavenging expedition. Get everything we need in one trip.", outcome:"good", title:"Calculated Risk", explanation:"Dangerous but thorough. The team returns with three times what was needed. You have spares for repairs. The risk was worth it.", budget:15,schedule:10,team:5,sponsor:10},
+          {text:"Small scouting party first. Assess before committing.", outcome:"neutral", title:"Scout First", explanation:"The scout trip delays four days but reveals the city is safer than feared. The unfriendly group has moved on. Full expedition is safer.", budget:0,schedule:-8,team:5,sponsor:5},
+          {text:"Work only with what we have locally. No city trip.", outcome:"bad", title:"Underpowered Build", explanation:"Yusuf builds the best he can. The signal reaches only one settlement, weakly. The project's value is a fraction of what it could have been.", budget:5,schedule:5,team:-5,sponsor:-15},
+        ]
+      },
+      { phase:"Planning", title:"Which Settlements Get Connected First?",
+        situation:"You can only connect two settlements in phase one. Three are asking: the northern farming community, the southern medical group, and the eastern tool-makers. All three leaders are at the meeting.",
+        flavour:"All three communities are valuable. All three leaders are at the meeting.",
         choices:[
-          {text:"Food and medicine. Human need first.", outcome:"good", title:"People First", explanation:"The medicine connection saves two lives — a disease outbreak reached you in time to quarantine.", budget:5,schedule:0,team:5,sponsor:15},
-          {text:"Medicine and tools. Building capacity.", outcome:"neutral", title:"Infrastructure Focus", explanation:"Solid long-term thinking. Tool supply improves three ongoing projects.", budget:5,schedule:5,team:0,sponsor:5},
-          {text:"Most politically valuable to the council.", outcome:"bad", title:"Political Choice", explanation:"The excluded food settlement cuts off grain trade in protest.", budget:-15,schedule:0,team:-5,sponsor:-20},
-        ]},
-      { phase:"Execution", title:"The Tower Construction", situation:"Day 6, at 11 metres — structural error found. Base too narrow for this height in wind. Dismantle four metres and rebuild, or find a workaround?", flavour:"The tower sways. Yusuf stares at his calculations. He erases something.",
+          {text:"Food and medicine. Human need over industrial convenience.", outcome:"good", title:"People First", explanation:"The medicine connection saves two lives in the first month — information about a disease outbreak reaches you in time to quarantine. Right call.", budget:5,schedule:0,team:5,sponsor:15},
+          {text:"Medicine and tools. Building capacity for the future.", outcome:"neutral", title:"Infrastructure Focus", explanation:"Solid long-term thinking. The tool supply improves three ongoing projects. No immediate lives saved but the settlement is stronger.", budget:5,schedule:5,team:0,sponsor:5},
+          {text:"Whichever two settlements are most politically valuable to the council.", outcome:"bad", title:"Political Choice", explanation:"The excluded food settlement cuts off grain trade in protest. You optimised for politics over human need.", budget:-15,schedule:0,team:-5,sponsor:-20},
+        ]
+      },
+      { phase:"Execution", title:"The Tower Construction",
+        situation:"Day 6 of construction, at 11 metres, a structural calculation error is discovered — the base isn't wide enough for this height in wind. Fix it properly by dismantling the top four metres, or find a workaround.",
+        flavour:"The tower sways. Yusuf stares at his calculations. He erases something.",
         choices:[
-          {text:"Dismantle and rebuild the base. Do it right.", outcome:"good", title:"Start Over to Get It Right", explanation:"Four days rebuilt. The first storm doesn't make it creak.", budget:-5,schedule:-8,team:5,sponsor:5},
-          {text:"Reinforce the existing base without full dismantling.", outcome:"neutral", title:"Patch Solution", explanation:"Passable but needs monthly inspection.", budget:-5,schedule:-3,team:0,sponsor:0},
-          {text:"Press on. 11 metres is probably fine.", outcome:"bad", title:"Reduced and Unstable", explanation:"A windstorm brings it down at 2am. Project restarts from scratch.", budget:-20,schedule:-25,team:-10,sponsor:-15},
-        ]},
-      { phase:"Execution", title:"The Hostile Group Wants In", situation:"~80 people heard about the tower and want connection. Isolated, desperate. History of taking resources by force.", flavour:"Their representative arrives unarmed, alone. She looks tired.",
+          {text:"Dismantle and rebuild the base. Do it right.", outcome:"good", title:"Start Over to Get It Right", explanation:"Four days rebuilt. The tower goes back up stronger. The first storm after completion doesn't make it creak.", budget:-5,schedule:-8,team:5,sponsor:5},
+          {text:"Reinforce the existing base without full dismantling.", outcome:"neutral", title:"Patch Solution", explanation:"Yusuf is not fully confident but it's passable. The tower stands but needs monthly inspection.", budget:-5,schedule:-3,team:0,sponsor:0},
+          {text:"Press on. 11 metres is probably fine. Reduce the height target.", outcome:"bad", title:"Reduced and Unstable", explanation:"A windstorm three weeks later brings it down at 2am. Nobody is hurt. The project restarts from scratch.", budget:-20,schedule:-25,team:-10,sponsor:-15},
+        ]
+      },
+      { phase:"Execution", title:"The Unfriendly Group Wants In",
+        situation:"The group from the eastern city — about 80 people — have heard about the tower and want connection. They've been isolated. Some are desperate. They have a reputation for taking resources by force in the early days.",
+        flavour:"Their representative arrives unarmed, alone. She looks tired.",
         choices:[
-          {text:"Include them. A connected group is better than an isolated one.", outcome:"good", title:"Include to Transform", explanation:"Within six weeks they're contributing salvage. Inclusion breeds cooperation.", budget:-5,schedule:-5,team:5,sponsor:10},
-          {text:"Decline for now. Build trust with known partners first.", outcome:"neutral", title:"Cautious Exclusion", explanation:"Reasonable given history. You revisit in two months.", budget:5,schedule:5,team:0,sponsor:0},
-          {text:"Refuse entirely. Their history disqualifies them.", outcome:"bad", title:"Enemy Made", explanation:"Two months later they disrupt a supply run.", budget:-10,schedule:-5,team:-10,sponsor:-10},
-        ]},
-      { phase:"Closing", title:"First Contact", situation:"The tower is complete. A voice on the other end — the first voice from outside in months. What do you say first?", flavour:"Static. Then a voice. The whole settlement is gathered around the hand-cranked radio.",
+          {text:"Include them. A connected group is better than an isolated one.", outcome:"good", title:"Include to Transform", explanation:"The connection changes them. Within six weeks they're contributing salvage to the network. Isolation breeds desperation. Inclusion breeds cooperation.", budget:-5,schedule:-5,team:5,sponsor:10},
+          {text:"Decline for now. Build trust with known partners first.", outcome:"neutral", title:"Cautious Exclusion", explanation:"Reasonable given history. They accept the answer, barely. You revisit in two months when the network is stable.", budget:5,schedule:5,team:0,sponsor:0},
+          {text:"Refuse entirely. Their history disqualifies them.", outcome:"bad", title:"Enemy Made", explanation:"Two months later they disrupt a supply run. An isolated desperate group is more dangerous than a connected one.", budget:-10,schedule:-5,team:-10,sponsor:-10},
+        ]
+      },
+      { phase:"Closing", title:"First Contact",
+        situation:"The tower is complete. Yusuf makes first contact with the northern settlement at 6am. The signal is clear. On the other end — a voice. The first voice from outside in months. What do you say first?",
+        flavour:"Static. Then a voice. The whole settlement is gathered around the hand-cranked radio.",
         choices:[
-          {text:"'We're here. What do you need?' Listen first.", outcome:"good", title:"The Right First Words", explanation:"They've been fighting an illness and didn't know you had a doctor. Three lives saved in the first week.", budget:5,schedule:0,team:20,sponsor:20},
-          {text:"Share your settlement's status and resources.", outcome:"neutral", title:"Mutual Disclosure", explanation:"A practical exchange. Starts transactionally but builds.", budget:5,schedule:0,team:10,sponsor:10},
-          {text:"Formal introduction. Name the settlement, describe the network.", outcome:"neutral", title:"Diplomatic Opening", explanation:"Moved them. It feels like civilisation again.", budget:0,schedule:0,team:15,sponsor:10},
-        ]},
+          {text:"'We're here. What do you need?' Listen first.", outcome:"good", title:"The Right First Words", explanation:"The northern settlement has been fighting an illness and didn't know you had a doctor. You save three lives in the first week. The network's value is immediately proven.", budget:5,schedule:0,team:20,sponsor:20},
+          {text:"Share your settlement's status, needs, and resources immediately.", outcome:"neutral", title:"Mutual Disclosure", explanation:"A practical exchange. Both settlements quickly learn what each has and needs. The relationship starts transactionally but builds.", budget:5,schedule:0,team:10,sponsor:10},
+          {text:"Formal introduction: name the settlement, describe the network.", outcome:"neutral", title:"Diplomatic Opening", explanation:"Professional and hopeful. The other settlement is moved by the formality — it feels like civilisation again.", budget:0,schedule:0,team:15,sponsor:10},
+        ]
+      }
     ]
   },
   {
     id:"wall", emoji:"🧱", name:"The Settlement Wall", era:"Day 178 · Valley Settlement", diff:"★★★★★", urgency:"CRITICAL",
+    intro:"Three months ago, raiders took food from two outlying farms. Nobody was killed but two families abandoned their homes. Your settlement of 600 has no perimeter. The council is divided: build a wall or focus on diplomacy. You've been asked to manage the wall project — if it goes ahead. The vote is tomorrow.",
     scenes:[
-      { phase:"Initiation", title:"Should We Even Build It?", situation:"Council vote is tied. Half say necessary. Half say it signals aggression. You have one evening to help them decide.", flavour:"Two people lost property. One thinks walls are how everything went wrong.",
+      { phase:"Initiation", title:"Should We Even Build It?",
+        situation:"The council vote is tied. Half say a wall is necessary. Half say it projects aggression and consumes resources needed for food and medicine. You have one evening to help them make a good decision.",
+        flavour:"Two people in the room have lost property. One person thinks walls are how everything went wrong in the first place.",
         choices:[
-          {text:"Present full risk analysis: building cost vs. raid cost.", outcome:"good", title:"Evidence-Based Decision", explanation:"Analysis shows one more raid costs more than a minimal wall. Council votes 6-3 to build.", budget:5,schedule:5,team:5,sponsor:15},
-          {text:"Recommend watch posts and alarm system instead.", outcome:"neutral", title:"Lighter Option", explanation:"Faster, cheaper, doesn't project hostility. Won't stop a determined raid but gives warning.", budget:10,schedule:10,team:5,sponsor:5},
-          {text:"Tell the council it's their call and leave.", outcome:"bad", title:"Leadership Vacuum", explanation:"Council deadlocks. Two months later another raid. You're blamed for providing no guidance.", budget:0,schedule:-10,team:-5,sponsor:-20},
-        ]},
-      { phase:"Planning", title:"Who Builds It?", situation:"Full perimeter: 400 person-weeks. Other urgent work exists. Prioritise the wall, run parallel, or build most exposed sections first?", flavour:"Your project list is already a column of urgent items.",
+          {text:"Present a full risk analysis: cost of building vs. cost of another raid.", outcome:"good", title:"Evidence-Based Decision", explanation:"The analysis shows one more raid costs more than a minimal wall. The council votes 6-3 to build, owning the decision because you gave them the data.", budget:5,schedule:5,team:5,sponsor:15},
+          {text:"Recommend watch posts and an alarm system, not a full wall.", outcome:"neutral", title:"Lighter Option", explanation:"The council accepts. Faster, cheaper, doesn't project hostility. Won't stop a determined raid but gives warning.", budget:10,schedule:10,team:5,sponsor:5},
+          {text:"Tell the council it's their call and leave the room.", outcome:"bad", title:"Leadership Vacuum", explanation:"The council deadlocks again. Two months later there's another raid. You get blamed for providing no guidance when it mattered.", budget:0,schedule:-10,team:-5,sponsor:-20},
+        ]
+      },
+      { phase:"Planning", title:"Who Builds It?",
+        situation:"A full perimeter wall requires 400 person-weeks of labour. You have other urgent work — crops, clinic, water. Three options: prioritise the wall and delay other projects, run everything in parallel, or build only the most exposed sections first.",
+        flavour:"Your project list is already a column of urgent items. The wall is now the top.",
         choices:[
-          {text:"Phase it: most exposed sections first, full perimeter over three months.", outcome:"good", title:"Phased Security", explanation:"Farm-facing sides done in week three. Risk drops immediately. Nothing else collapses.", budget:-5,schedule:5,team:10,sponsor:15},
-          {text:"Full wall, full speed. Everything else waits.", outcome:"bad", title:"Everything Else Suffers", explanation:"Water relay maintenance missed, section collapses, child gets sick from dirty water.", budget:-10,schedule:-5,team:-15,sponsor:-10},
-          {text:"Run everything in parallel. Spread the labour.", outcome:"neutral", title:"Stretched Thin", explanation:"Everything at 60% capacity. Nothing fails. Nothing excels.", budget:-5,schedule:-10,team:-5,sponsor:5},
-        ]},
-      { phase:"Execution", title:"The Raiders Send a Representative", situation:"Week four. A young man arrives unarmed: the raids were desperation. They have 40 people, no food security — and skills you need.", flavour:"He looks about 19. He is terrified. He came anyway.",
+          {text:"Phase it: most exposed sections first, full perimeter over three months.", outcome:"good", title:"Phased Security", explanation:"The two farm-facing sides are done in week three. Risk drops immediately. The full perimeter follows at sustainable pace. Nothing else collapses.", budget:-5,schedule:5,team:10,sponsor:15},
+          {text:"Full wall, full speed. Everything else waits.", outcome:"bad", title:"Everything Else Suffers", explanation:"The water relay maintenance is missed. A section collapses. A child gets sick from dirty water while you're building a wall. The irony is not lost.", budget:-10,schedule:-5,team:-15,sponsor:-10},
+          {text:"Run everything in parallel. Spread the labour.", outcome:"neutral", title:"Stretched Thin", explanation:"Everything proceeds at 60% capacity. Nothing fails catastrophically. Nothing succeeds brilliantly.", budget:-5,schedule:-10,team:-5,sponsor:5},
+        ]
+      },
+      { phase:"Execution", title:"The Raiders Send a Representative",
+        situation:"Week four of construction. A young man arrives unarmed with a message: they want to talk. The raids were desperation, not aggression. They have 40 people, no food security — and skills your settlement needs.",
+        flavour:"He looks about 19. He is terrified. He came anyway.",
         choices:[
-          {text:"Talk. Pause construction during negotiations.", outcome:"good", title:"Radical Option", explanation:"Their group has a blacksmith, baker, water engineer. Peace is cheaper than stone.", budget:10,schedule:-5,team:10,sponsor:15},
-          {text:"Talk but keep building. Trust but verify.", outcome:"neutral", title:"Parallel Tracks", explanation:"Both work. Integrated group earns trust over time.", budget:-5,schedule:5,team:5,sponsor:10},
-          {text:"Refuse. Actions have consequences.", outcome:"bad", title:"Missed Peace", explanation:"The desperate faction raids again in month two. Wall isn't finished. Your refusal made it worse.", budget:-15,schedule:-10,team:-5,sponsor:-10},
-        ]},
-      { phase:"Execution", title:"Structural Disagreement", situation:"Lead builder says the mortar mix will crack in frost. Materials expert disagrees. An independent assessment takes three days.", flavour:"Nobody is quite sure what the climate means anymore since the flare.",
+          {text:"Talk. Pause construction during negotiations.", outcome:"good", title:"Radical Option", explanation:"The talks lead to integration. Their group has a blacksmith, a baker, and a water engineer you've been missing. The wall becomes partially unnecessary. Peace is cheaper than stone.", budget:10,schedule:-5,team:10,sponsor:15},
+          {text:"Talk but keep building. Trust but verify.", outcome:"neutral", title:"Parallel Tracks", explanation:"Talks proceed. Wall proceeds. Both work. The integrated group earns trust over time. The wall still gets built but never needed.", budget:-5,schedule:5,team:5,sponsor:10},
+          {text:"Refuse. Actions have consequences. Keep building.", outcome:"bad", title:"Missed Peace", explanation:"The raiding group splits. The desperate faction raids again in month two. The wall isn't finished yet. Your refusal made the threat worse.", budget:-15,schedule:-10,team:-5,sponsor:-10},
+        ]
+      },
+      { phase:"Execution", title:"Structural Disagreement",
+        situation:"Halfway through, your lead builder says the mortar mix is wrong — clay-heavy soil that will crack in frost. Your materials expert says it'll be fine. You don't know who's right. A third opinion takes three days.",
+        flavour:"The first frost is 60 days away. Nobody is quite sure what the climate means anymore since the flare messed with weather patterns.",
         choices:[
-          {text:"Three-day delay. Get the independent assessment.", outcome:"good", title:"Check First", explanation:"Assessment sides with the lead builder. Mix changed. Wall survives its first winter.", budget:-3,schedule:-3,team:5,sponsor:5},
-          {text:"Trust your lead builder. Change the mix now.", outcome:"neutral", title:"Builder Wins", explanation:"Lead builder was right. Two extra days. The wall holds.", budget:-5,schedule:-5,team:5,sponsor:0},
-          {text:"Trust the materials expert. Keep going.", outcome:"bad", title:"Winter Damage", explanation:"First frost cracks a 40-metre section. Emergency repairs in the cold.", budget:-20,schedule:-20,team:-10,sponsor:-10},
-        ]},
-      { phase:"Closing", title:"What Kind of Wall Did We Build?", situation:"Done. Guarded gates with formal protocols, or open gates with a watch schedule and trust-based approach?", flavour:"The wall exists. What it means is still being decided.",
+          {text:"Three-day delay. Get the independent assessment.", outcome:"good", title:"Check First", explanation:"The assessment sides with the lead builder. The mix is changed. The wall survives its first winter perfectly.", budget:-3,schedule:-3,team:5,sponsor:5},
+          {text:"Trust your lead builder. Change the mix now.", outcome:"neutral", title:"Builder Wins", explanation:"The lead builder was right. Two extra days and slightly more material. The wall holds.", budget:-5,schedule:-5,team:5,sponsor:0},
+          {text:"Trust the materials expert. Keep going.", outcome:"bad", title:"Winter Damage", explanation:"The materials expert was wrong. The first frost cracks a 40-metre section. Emergency cold-weather repairs are miserable and dangerous.", budget:-20,schedule:-20,team:-10,sponsor:-10},
+        ]
+      },
+      { phase:"Closing", title:"What Kind of Wall Did We Build?",
+        situation:"The wall is done. Two paths: hard perimeter with guarded gates and formal protocols, or open gates by default with a watch schedule and trust-based approach. The council is split again.",
+        flavour:"The wall exists. What it means is still being decided.",
         choices:[
-          {text:"Open gates, watch schedule. Community, not fortress.", outcome:"good", title:"Open Settlement", explanation:"Attracts three skilled people who'd have turned away from a fortress.", budget:0,schedule:0,team:15,sponsor:10},
-          {text:"Guarded gates. Formal protocols.", outcome:"neutral", title:"Fortress Approach", explanation:"Secure but cold. Two potential allies turn away. Zero threat incidents.", budget:0,schedule:0,team:-5,sponsor:5},
-          {text:"Let each watch team decide their own approach.", outcome:"bad", title:"Inconsistent Rules", explanation:"A legitimate trader is turned away. He tells every settlement in the network.", budget:0,schedule:0,team:-5,sponsor:-15},
-        ]},
+          {text:"Open gates, watch schedule. We're building a community, not a fortress.", outcome:"good", title:"Open Settlement", explanation:"Openness attracts three skilled individuals who would have turned away from a fortress. The watch schedule catches one genuine threat.", budget:0,schedule:0,team:15,sponsor:10},
+          {text:"Guarded gates. Formal protocols. Safety first.", outcome:"neutral", title:"Fortress Approach", explanation:"Secure but cold. Two potential allies turn away from the gate procedure. Threat incidents: zero.", budget:0,schedule:0,team:-5,sponsor:5},
+          {text:"Let each watch team decide their own approach.", outcome:"bad", title:"Inconsistent Rules", explanation:"A legitimate trader is turned away by a strict team. He complains to every settlement in the network. Your reputation suffers.", budget:0,schedule:0,team:-5,sponsor:-15},
+        ]
+      }
     ]
   },
   {
     id:"trade", emoji:"🤝", name:"The Trade Network", era:"Day 244 · Regional Alliance", diff:"★★★★★", urgency:"HIGH",
+    intro:"Six settlements. Each one has something the others need. One has good farmland. One has a blacksmith. One has medicines. One has timber. One has the river crossing. Yours has a project manager. You've been asked to build the region's first post-flare trade network. No money. No banks. No central authority. Just humans agreeing on value.",
     scenes:[
-      { phase:"Initiation", title:"What Does Trade Even Mean Now?", situation:"Six settlements, each with something others need. Before the first meeting: full audit of all six, trust what leaders say, or start with two trusted settlements?", flavour:"Everyone claims to have more than they need of what they have.",
+      { phase:"Initiation", title:"What Does Trade Even Mean Now?",
+        situation:"Before the first meeting, you need to understand what each settlement has to offer and actually needs. You could send representatives to all six, trust what leaders say, or start small with two settlements and build outward.",
+        flavour:"Everyone claims to have more than they need of what they have. This is probably true.",
         choices:[
-          {text:"Full audit. Representatives visit all six first.", outcome:"good", title:"Know What You Have", explanation:"Three weeks but the meeting is efficient and honest. More hopeful than expected.", budget:-5,schedule:-10,team:5,sponsor:15},
-          {text:"Start with what leaders say they have. Verify over time.", outcome:"neutral", title:"Trust and Verify", explanation:"Some claims break down later but you make faster progress.", budget:5,schedule:5,team:0,sponsor:5},
-          {text:"Start with two trusted settlements. Build outward.", outcome:"neutral", title:"Seed the Network", explanation:"The pilot works. Two months longer to reach six, but model is proven first.", budget:5,schedule:-10,team:10,sponsor:5},
-        ]},
-      { phase:"Planning", title:"The Unit of Value", situation:"You need a common currency. Pure barter, calorie-equivalent points, or settlement-issued IOUs?", flavour:"The former economist has seventeen opinions. She is probably right about most of them.",
+          {text:"Full audit. Representatives visit all six before the first meeting.", outcome:"good", title:"Know What You Have", explanation:"Takes three weeks but the first meeting is efficient and honest. The actual resource picture is very different from — and more hopeful than — the claimed one.", budget:-5,schedule:-10,team:5,sponsor:15},
+          {text:"Start with what leaders say they have. Verify over time.", outcome:"neutral", title:"Trust and Verify", explanation:"Some claims break down later. But you make faster progress and build the network as a living thing rather than a perfect plan.", budget:5,schedule:5,team:0,sponsor:5},
+          {text:"Start with two settlements that already trust each other. Build outward.", outcome:"neutral", title:"Seed the Network", explanation:"The pilot works beautifully. Two months longer to reach six, but the model is proven before it scales.", budget:5,schedule:-10,team:10,sponsor:5},
+        ]
+      },
+      { phase:"Planning", title:"The Unit of Value",
+        situation:"You need a common unit of trade. Options: pure barter, a calorie-equivalent points system, or settlement-issued IOUs backed by resources. This defines how the economy works.",
+        flavour:"The former economist in your group has seventeen opinions. She is probably right about most of them.",
         choices:[
-          {text:"Calorie-equivalent points. Food is the universal need.", outcome:"good", title:"Common Language", explanation:"Hard to game, easy to understand. A knife is worth the calories it helps produce.", budget:5,schedule:5,team:10,sponsor:15},
-          {text:"Pure barter. Let people negotiate their own value.", outcome:"bad", title:"Negotiation Hell", explanation:"Every trade takes an hour. Stronger negotiators win. Two settlements withdraw.", budget:0,schedule:-10,team:-5,sponsor:-15},
-          {text:"IOU vouchers issued by each settlement.", outcome:"neutral", title:"Primitive Finance", explanation:"Some settlements issue more than they can honour. You deal with the equivalent of inflation.", budget:0,schedule:-5,team:5,sponsor:5},
-        ]},
-      { phase:"Execution", title:"The Blacksmith's Monopoly", situation:"Settlement Three has the only blacksmith. They're doubling tool prices monthly. Four settlements are complaining.", flavour:"The blacksmith is not evil. He is human. And he is charging whatever the market will bear.",
+          {text:"Calorie-equivalent points. Food is the universal need.", outcome:"good", title:"Common Language", explanation:"Hard to game, easy to understand. A knife is worth the calories it helps produce. Medicine is valued by the lives it saves. Not perfect but fair and universal.", budget:5,schedule:5,team:10,sponsor:15},
+          {text:"Pure barter. Let people negotiate their own value.", outcome:"bad", title:"Negotiation Hell", explanation:"Every trade takes an hour of argument. Stronger negotiators consistently win. Two settlements withdraw from the network within six weeks.", budget:0,schedule:-10,team:-5,sponsor:-15},
+          {text:"IOU vouchers issued by each settlement.", outcome:"neutral", title:"Primitive Finance", explanation:"Works in theory. Some settlements issue more vouchers than they can honour. You spend three months dealing with the equivalent of inflation. Instructive.", budget:0,schedule:-5,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Execution", title:"The Blacksmith's Monopoly",
+        situation:"Settlement Three has the only blacksmith in the region. They're quietly doubling the price of tools every month. Four settlements are complaining to you. This is your first monopoly problem.",
+        flavour:"The blacksmith is not evil. He is human. And he is charging whatever the market will bear.",
         choices:[
-          {text:"Facilitate talks to establish a fair price framework.", outcome:"good", title:"Market Rules", explanation:"The blacksmith accepts when two settlements threaten to train a competitor. Fair prices established.", budget:5,schedule:-5,team:5,sponsor:15},
-          {text:"Help another settlement develop blacksmithing capacity.", outcome:"good", title:"Competition Works", explanation:"Six weeks for the competitor. Original blacksmith drops prices. Network benefits from having two.", budget:-10,schedule:-10,team:10,sponsor:10},
-          {text:"Leave it. Trade is voluntary.", outcome:"bad", title:"Market Failure", explanation:"Prices reach a point where two settlements can't afford tools. Agricultural output drops.", budget:-10,schedule:-5,team:-10,sponsor:-15},
-        ]},
-      { phase:"Execution", title:"A Settlement Cheats", situation:"Settlement Two is trading partially rotten fish — looks fine but makes people sick. They deny it. You need to investigate and adjudicate.", flavour:"Someone is lying. Everyone is watching to see what you do about it.",
+          {text:"Facilitate talks to establish a fair price framework across the network.", outcome:"good", title:"Market Rules", explanation:"Painful negotiation. The blacksmith resists, then accepts when two settlements threaten to train their own apprentice. Fair prices established.", budget:5,schedule:-5,team:5,sponsor:15},
+          {text:"Help another settlement develop their own blacksmithing capacity.", outcome:"good", title:"Competition Works", explanation:"Six weeks for the competitor to become operational. The original blacksmith drops prices to compete. The network benefits from having two.", budget:-10,schedule:-10,team:10,sponsor:10},
+          {text:"Leave it. Trade is voluntary. People can refuse to buy.", outcome:"bad", title:"Market Failure", explanation:"The blacksmith's prices reach a point where two settlements can't afford tools. Agricultural output drops. Inaction was wrong.", budget:-10,schedule:-5,team:-10,sponsor:-15},
+        ]
+      },
+      { phase:"Execution", title:"A Settlement Cheats",
+        situation:"Settlement Two has been trading dried fish that is partially rotten — it looks fine but makes people sick after a week. Three settlements have complained. Settlement Two's leader denies it and blames poor storage. You need to investigate and adjudicate.",
+        flavour:"Someone is lying. Everyone is watching to see what you do about it.",
         choices:[
-          {text:"Independent quality check — neutral taster to all settlements.", outcome:"good", title:"Evidence Decides", explanation:"Confirms the fish problem. Their leader admits a storage issue, not fraud. New quality standards set.", budget:-3,schedule:-5,team:5,sponsor:15},
-          {text:"Publicly accuse Settlement Two and let the network judge.", outcome:"bad", title:"Public Shaming", explanation:"They withdraw. Later it was a storage issue they didn't know about. You lost an ally.", budget:-5,schedule:-5,team:-10,sponsor:-15},
-          {text:"Private conversation with their leader first.", outcome:"neutral", title:"Quiet Diplomacy", explanation:"He admits the problem privately. Resolved quietly. Complainants frustrated but accept it.", budget:0,schedule:0,team:5,sponsor:5},
-        ]},
-      { phase:"Closing", title:"Who Governs the Network?", situation:"The network works. But it needs formal governance. You as permanent manager, rotating chair, or elected assembly?", flavour:"This is the moment where a project becomes an institution.",
+          {text:"Independent quality check — send a neutral taster to all settlements.", outcome:"good", title:"Evidence Decides", explanation:"The check confirms Settlement Two's fish. Their leader admits a storage problem — not deliberate fraud. New quality standards established. Network survives.", budget:-3,schedule:-5,team:5,sponsor:15},
+          {text:"Publicly accuse Settlement Two and let the network judge.", outcome:"bad", title:"Public Shaming", explanation:"Settlement Two withdraws. Later it turns out it was partly a storage issue they didn't know about. You lost an ally over incomplete information.", budget:-5,schedule:-5,team:-10,sponsor:-15},
+          {text:"Private conversation with Settlement Two's leader first.", outcome:"neutral", title:"Quiet Diplomacy", explanation:"He admits the problem privately. Resolves quietly. Complainants are frustrated by lack of public accountability but accept the outcome.", budget:0,schedule:0,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Closing", title:"Who Governs the Network?",
+        situation:"The network is working. But decisions need to be made — disputes, new members, quality standards. The six leaders want a formal structure. Options: you continue as network manager, a rotating chair, or an elected representative assembly.",
+        flavour:"This is the moment where a project becomes an institution.",
         choices:[
-          {text:"Elected representative assembly. One vote per settlement.", outcome:"good", title:"Democracy", explanation:"Messy and exciting. Slower than you alone but more legitimate. You've built something that outlasts you.", budget:-5,schedule:-5,team:10,sponsor:20},
-          {text:"Rotating chair from the six leaders.", outcome:"neutral", title:"Council Model", explanation:"Works well for two cycles. Falls apart when the most powerful settlement won't rotate.", budget:0,schedule:0,team:5,sponsor:10},
-          {text:"Continue as network manager. You know this best.", outcome:"bad", title:"Single Point of Failure", explanation:"When you get sick, three disputes go unresolved. An institution that depends on one person isn't one.", budget:5,schedule:5,team:-5,sponsor:-10},
-        ]},
+          {text:"Elected representative assembly. One vote per settlement.", outcome:"good", title:"Democracy", explanation:"Takes a month to set up. The first assembly is messy and exciting. Slower than you were alone but more legitimate and durable. You've built something that outlasts you.", budget:-5,schedule:-5,team:10,sponsor:20},
+          {text:"Rotating chair from the six leaders.", outcome:"neutral", title:"Council Model", explanation:"Works well for two cycles. Falls apart when the most powerful settlement takes the chair and doesn't rotate fairly. A future problem.", budget:0,schedule:0,team:5,sponsor:10},
+          {text:"Continue as network manager. You know this best.", outcome:"bad", title:"Single Point of Failure", explanation:"You're essential and exhausted. When you get sick for two weeks, three disputes go unresolved. An institution that depends on one person isn't an institution.", budget:5,schedule:5,team:-5,sponsor:-10},
+        ]
+      }
     ]
   },
   {
     id:"harvest", emoji:"🌱", name:"The First Harvest", era:"Day 28 · Southern Flats", diff:"★★★☆☆", urgency:"CRITICAL",
+    intro:"Planting season. Your settlement has enough stored food for 60 days. The growing season is 90 days. The gap between eating what you have and eating what you grow is 30 days of nothing. You have land, seed stock, tools, and people who mostly learned farming from YouTube before the flare.",
     scenes:[
-      { phase:"Initiation", title:"What Can We Actually Grow Here?", situation:"Wheat, potatoes, corn, beans. Mixed clay and loam soil. One person who grew up on a farm — Rosa — and everyone else with very confident opinions.", flavour:"Rosa has been politely saying 'that's not how it works' for three days. Nobody is listening.",
+      { phase:"Initiation", title:"What Can We Actually Grow Here?",
+        situation:"Seed stock includes wheat, potatoes, corn, and beans. Your land is a mix of clay-heavy soil and sandy loam. You have one person who grew up on a farm — Rosa — and everyone else who has very confident opinions.",
+        flavour:"Rosa has been politely saying 'that's not how it works' for three days. Nobody is listening.",
         choices:[
-          {text:"Rosa leads agricultural planning. Her knowledge, her decisions.", outcome:"good", title:"Expertise First", explanation:"Rosa's plan yields 40% more than alternatives projected. Trust the person who actually knows.", budget:5,schedule:5,team:5,sponsor:15},
-          {text:"Democratic vote on what to plant.", outcome:"bad", title:"Democracy of Ignorance", explanation:"Vote goes to corn. Wrong soil preparation. Half the crop fails.", budget:-15,schedule:-10,team:-10,sponsor:-10},
-          {text:"Split the land — try multiple approaches.", outcome:"neutral", title:"Experimental Approach", explanation:"Rosa gets the best field. Others learn on smaller plots. Adequate yield.", budget:-5,schedule:5,team:5,sponsor:5},
-        ]},
-      { phase:"Planning", title:"The 30-Day Gap", situation:"You'll run out of food 30 days before harvest. Ration now, send foraging parties, or trade future harvest promises for current food?", flavour:"The calendar does the maths for you. It is not encouraging.",
+          {text:"Rosa leads agricultural planning. Her knowledge, her decisions.", outcome:"good", title:"Expertise First", explanation:"Rosa's plan: potatoes on clay, wheat and beans on loam. It's not what confident people expected but it's right. Yield is 40% higher than alternative plans projected.", budget:5,schedule:5,team:5,sponsor:15},
+          {text:"Democratic vote on what to plant. Everyone has a stake.", outcome:"bad", title:"Democracy of Ignorance", explanation:"The vote goes to corn. Corn needs soil preparation you don't have time for. Half the crop fails. The democratic process was the wrong tool.", budget:-15,schedule:-10,team:-10,sponsor:-10},
+          {text:"Split the land — try multiple approaches and learn.", outcome:"neutral", title:"Experimental Approach", explanation:"Rosa gets the best field. Others try their ideas on smaller plots. You learn a lot. Yield is adequate. Lessons compound into next season.", budget:-5,schedule:5,team:5,sponsor:5},
+        ]
+      },
+      { phase:"Planning", title:"The 30-Day Gap",
+        situation:"You'll run out of stored food 30 days before harvest. Three options: ration now to extend the supply, send foraging parties to supplement, or trade future harvest promises to a neighbouring settlement for current food.",
+        flavour:"The calendar on the wall does the maths for you. It is not encouraging.",
         choices:[
-          {text:"Ration now. Hard but controlled.", outcome:"neutral", title:"Discipline Over Comfort", explanation:"Two weeks of reduced rations. Food extends to harvest with ten days to spare.", budget:5,schedule:0,team:-10,sponsor:0},
-          {text:"Foraging parties plus moderate rationing.", outcome:"good", title:"Supplement the Supply", explanation:"Elderberries, mushrooms, river fish add 20%. Gap closes without anyone going hungry.", budget:5,schedule:-5,team:10,sponsor:10},
-          {text:"Trade future harvest for current food from a neighbour.", outcome:"good", title:"Smart Borrowing", explanation:"1.2kg in autumn for every 1kg now. Well-fed people work harder. Harvest more than repays.", budget:-5,schedule:5,team:15,sponsor:15},
-        ]},
-      { phase:"Execution", title:"The Drought Week", situation:"No rain for eight days. One water barrel reserve — enough for the most critical plots once. Rosa wants wheat. Others want potatoes.", flavour:"The sky is blue and unhelpful.",
+          {text:"Ration now. Hard but controlled.", outcome:"neutral", title:"Discipline Over Comfort", explanation:"Two weeks of reduced rations. People are hungry and unhappy. But food extends to harvest with ten days to spare.", budget:5,schedule:0,team:-10,sponsor:0},
+          {text:"Foraging parties plus moderate rationing. Hybrid approach.", outcome:"good", title:"Supplement the Supply", explanation:"Foraging adds 20% to your food supply — elderberries, mushrooms, river fish. Combined with moderate rationing, the gap closes without anyone going hungry.", budget:5,schedule:-5,team:10,sponsor:10},
+          {text:"Trade future harvest for current food from a neighbour.", outcome:"good", title:"Smart Borrowing", explanation:"The neighbour agrees to 1.2kg in autumn for every 1kg now. Your people stay well-fed and work harder. The harvest yields more than enough to repay.", budget:-5,schedule:5,team:15,sponsor:15},
+        ]
+      },
+      { phase:"Execution", title:"The Drought Week",
+        situation:"Week four. No rain for eight days. The wheat is showing stress. You have one large water barrel reserve — enough to water the most critical plots once. You can't water everything. Rosa wants to prioritise wheat. Others want the potato field.",
+        flavour:"The sky is blue and unhelpful.",
         choices:[
-          {text:"Follow Rosa. Water the wheat.", outcome:"good", title:"Trust the Expert Again", explanation:"Wheat survives. Rain comes day ten. Potatoes more drought-resistant than feared.", budget:0,schedule:0,team:5,sponsor:10},
-          {text:"Split the water evenly.", outcome:"neutral", title:"Equal Distribution", explanation:"No crop gets enough to recover. All survive at reduced yield.", budget:0,schedule:0,team:5,sponsor:0},
-          {text:"Water the potatoes — people survived on potatoes.", outcome:"neutral", title:"Staple Crop Priority", explanation:"Potatoes saved. Wheat drops 30%. Enough food but the lesson goes unlearned.", budget:0,schedule:0,team:0,sponsor:-5},
-        ]},
-      { phase:"Execution", title:"Someone Is Stealing From the Fields", situation:"Sections of the potato field are being harvested early — food before it's ready. Less nutritious, reduces yield. You don't know who.", flavour:"Someone is desperate enough to steal food that isn't ready yet. That tells you something.",
+          {text:"Follow Rosa. Water the wheat. It's the highest-yield crop.", outcome:"good", title:"Trust the Expert Again", explanation:"The wheat survives. Rain comes on day ten. The potatoes were more drought-resistant than feared. The harvest is solid.", budget:0,schedule:0,team:5,sponsor:10},
+          {text:"Split the water evenly across all crops.", outcome:"neutral", title:"Equal Distribution", explanation:"No crop gets enough to fully recover. All survive at reduced yield. Adequate but no surplus.", budget:0,schedule:0,team:5,sponsor:0},
+          {text:"Water the potato field — more people survived the flare on potatoes.", outcome:"neutral", title:"Staple Crop Priority", explanation:"The potatoes are saved. Wheat yield drops 30%. Enough food but the lesson — trust the expert — goes unlearned for another season.", budget:0,schedule:0,team:0,sponsor:-5},
+        ]
+      },
+      { phase:"Execution", title:"Someone is Stealing From the Fields",
+        situation:"Rosa reports that sections of the potato field are being harvested early — someone is taking food before it's ready. The immature potatoes are less nutritious and the loss will reduce yield. You don't know who.",
+        flavour:"Someone is desperate enough to steal food that isn't ready yet. That tells you something.",
         choices:[
-          {text:"Investigate quietly. Understand why before acting.", outcome:"good", title:"Root Cause", explanation:"A young man with a sick child who can't wait. You help him, increase their rations. He becomes your most dedicated field worker.", budget:-3,schedule:0,team:15,sponsor:10},
-          {text:"Public announcement: theft means reduced allocation.", outcome:"bad", title:"Punishment Culture", explanation:"Theft stops but three families feel falsely accused. Suspicion damages cooperation.", budget:0,schedule:0,team:-15,sponsor:-10},
-          {text:"Post a watch on the field at night.", outcome:"neutral", title:"Guarded Fields", explanation:"Theft stops. The underlying hungry family goes unaddressed.", budget:-3,schedule:-3,team:0,sponsor:5},
-        ]},
-      { phase:"Closing", title:"The Harvest", situation:"More food than needed — a small surplus. Communal reserve, trade for needed goods, or let families keep their share?", flavour:"The fields are golden. Rosa is smiling. This is what it was for.",
+          {text:"Investigate quietly. Understand why before acting.", outcome:"good", title:"Root Cause", explanation:"It's one young man from a family with a sick child who can't wait. You find him, help him, increase their rations. He becomes your most dedicated field worker.", budget:-3,schedule:0,team:15,sponsor:10},
+          {text:"Public announcement: theft will result in reduced allocation.", outcome:"bad", title:"Punishment Culture", explanation:"Theft stops but three other families feel falsely accused. Suspicion damages cooperation. Trust is harder to rebuild than potatoes are to plant.", budget:0,schedule:0,team:-15,sponsor:-10},
+          {text:"Post a watch on the field at night.", outcome:"neutral", title:"Guarded Fields", explanation:"Theft stops. The underlying problem — a family hungrier than the others — goes unaddressed until it resurfaces.", budget:-3,schedule:-3,team:0,sponsor:5},
+        ]
+      },
+      { phase:"Closing", title:"The Harvest",
+        situation:"Harvest time. More food than you need this winter — a small surplus. Build a communal reserve, trade for things you desperately need, or let families keep their fair share and decide for themselves?",
+        flavour:"The fields are golden. Rosa is smiling. This is what it was for.",
         choices:[
-          {text:"Communal reserve: save 60%, trade 20%, distribute 20%.", outcome:"good", title:"Balanced Stewardship", explanation:"Reserve saves you next year when a crop fails. Trade gets blacksmith access. Distribution rewards effort.", budget:10,schedule:0,team:15,sponsor:20},
-          {text:"Trade the surplus for tools and medicine.", outcome:"neutral", title:"Invest in the Future", explanation:"Next year's harvest is better because of the tools.", budget:15,schedule:0,team:5,sponsor:10},
-          {text:"Let each family keep their share.", outcome:"bad", title:"No Common Good", explanation:"When a crop fails in year two, there's no reserve. Three families go hungry.", budget:5,schedule:0,team:5,sponsor:-10},
-        ]},
+          {text:"Communal reserve: save 60%, trade 20%, distribute 20%.", outcome:"good", title:"Balanced Stewardship", explanation:"The reserve saves you next year when a crop fails. The trade gets you blacksmith access. The distribution rewards effort. A sustainable model.", budget:10,schedule:0,team:15,sponsor:20},
+          {text:"Trade the surplus for tools and medicine. Build capacity.", outcome:"neutral", title:"Invest in the Future", explanation:"Next year's harvest is better because of the tools. Families are proud of the contribution.", budget:15,schedule:0,team:5,sponsor:10},
+          {text:"Let each family keep their share. They earned it.", outcome:"bad", title:"No Common Good", explanation:"When a crop fails in year two, there's no reserve to draw on. Three families go hungry. The lesson that surplus is insurance goes unlearned.", budget:5,schedule:0,team:5,sponsor:-10},
+        ]
+      }
     ]
-  },
+  }
 ];
 
-const COLORS = {
-  void:"#080705",char:"#141210",ember:"#c94a1a",amber:"#c8880a",amber2:"#e8aa20",
-  paper:"#e4d8bc",paper2:"#cfc0a0",paper3:"#b0a080",ink:"#1a1408",faded:"#7a6a50",smoke:"#4a4030",
-};
+let currentProject=null,sceneIndex=0,stats={budget:100,schedule:100,team:100,sponsor:100},score=0;
 
-export default function App() {
-  const [screen, setScreen] = useState("home");
-  const [project, setProject] = useState(null);
-  const [sceneIdx, setSceneIdx] = useState(0);
-  const [stats, setStats] = useState({budget:100,schedule:100,team:100,sponsor:100});
-  const [score, setScore] = useState(0);
-  const [chosen, setChosen] = useState(null);
-
-  const startProject = (p) => {
-    setProject(p); setSceneIdx(0);
-    setStats({budget:100,schedule:100,team:100,sponsor:100});
-    setScore(0); setChosen(null); setScreen("game");
-  };
-
-  const makeChoice = (idx) => {
-    if (chosen !== null) return;
-    const c = project.scenes[sceneIdx].choices[idx];
-    setStats(s => ({
-      budget:   Math.max(0,Math.min(100,s.budget+c.budget)),
-      schedule: Math.max(0,Math.min(100,s.schedule+c.schedule)),
-      team:     Math.max(0,Math.min(100,s.team+c.team)),
-      sponsor:  Math.max(0,Math.min(100,s.sponsor+c.sponsor)),
-    }));
-    setScore(sc => sc + (c.outcome==="good"?20:c.outcome==="neutral"?10:0));
-    setChosen(idx);
-  };
-
-  const nextScene = () => {
-    if (sceneIdx + 1 >= project.scenes.length) setScreen("end");
-    else { setSceneIdx(i => i+1); setChosen(null); }
-  };
-
-  const scene = project ? project.scenes[sceneIdx] : null;
-  const chosenC = (chosen !== null && scene) ? scene.choices[chosen] : null;
-  const avg = Math.round((stats.budget+stats.schedule+stats.team+stats.sponsor)/4);
-  const finalScore = Math.round((score+avg)/2);
-
-  const endData = finalScore>=80
-    ? {emoji:"🌱",title:"The Settlement Survives",verdict:"You gave people water, food, shelter, or safety. Not with machines. With decisions. That is what management has always been."}
-    : finalScore>=60
-    ? {emoji:"🕯️",title:"Good Enough to Live",verdict:"Imperfect. A few wrong calls. But the project got done and people are alive who might not have been."}
-    : finalScore>=40
-    ? {emoji:"🪨",title:"Built on Shaky Ground",verdict:"The project exists. The problems are real. You'll fix them. Nobody got it right first time."}
-    : {emoji:"💀",title:"Lessons for Next Time",verdict:"Hard decisions with imperfect information. You just did that. The next attempt will be better."};
-
-  const C = COLORS;
-
-  // ── HOME ──
-  if (screen==="home") return (
-    <div style={{background:C.void,minHeight:"100vh",fontFamily:"'Courier Prime',monospace",padding:"0 0 32px"}}>
-      <div style={{background:C.ember,color:C.void,fontFamily:"'Oswald',sans-serif",fontSize:9,letterSpacing:3,textTransform:"uppercase",padding:"8px 0",textAlign:"center"}}>
-        ⚡ SOLAR EVENT OMEGA — ALL GRIDS DOWN — DAY 312 OF REBUILDING ⚡
-      </div>
-      <div style={{maxWidth:680,margin:"0 auto",padding:"20px 14px 0"}}>
-        <div style={{textAlign:"center",marginBottom:16}}>
-          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:9,letterSpacing:5,color:C.amber,textTransform:"uppercase",marginBottom:14}}>RECONSTRUCTION LOG</div>
-          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:"clamp(2.4rem,9vw,4.5rem)",fontWeight:700,color:C.paper,lineHeight:0.9,letterSpacing:-1}}>THE REBUILD</div>
-          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:"clamp(0.9rem,3vw,1.4rem)",fontWeight:300,letterSpacing:5,color:C.amber2,textTransform:"uppercase",marginBottom:16,marginTop:6}}>POST-FLARE PROJECT MANAGER</div>
-          <div style={{fontFamily:"'Courier Prime',monospace",fontSize:12,color:C.faded,lineHeight:1.75,borderTop:"1px solid rgba(200,136,10,0.15)",borderBottom:"1px solid rgba(200,136,10,0.15)",padding:"10px 0",marginBottom:18}}>
-            The satellites are gone. The internet is gone. The power is gone.<br/>
-            But people still need water, shelter, food, and each other.<br/>
-            You're the one who figures out how to organise it.
-          </div>
-        </div>
-        <div style={{background:C.paper,padding:"14px 16px",marginBottom:20,borderLeft:`4px solid ${C.ember}`,boxShadow:"3px 4px 0 rgba(0,0,0,0.4)",transform:"rotate(-0.3deg)"}}>
-          <span style={{fontFamily:"'Caveat',cursive",fontSize:15,color:C.ink,lineHeight:1.6}}>
-            📌 Someone left this notebook at the community board:<br/><br/>
-            <strong style={{color:C.ember}}>"Leadership in a world with no tech is still leadership. The problems didn't change. Just the tools."</strong><br/><br/>
-            — Unknown. Presumably still alive.
-          </span>
-        </div>
-        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:9,letterSpacing:4,color:C.smoke,textTransform:"uppercase",textAlign:"center",marginBottom:10}}>// Active Reconstruction Projects //</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(145px,1fr))",gap:8,marginBottom:16}}>
-          {PROJECTS.map(p => (
-            <button key={p.id} onClick={()=>startProject(p)}
-              style={{background:"rgba(18,14,9,0.95)",border:"1px solid rgba(200,136,10,0.2)",borderTop:`3px solid ${C.ember}`,padding:"12px 10px 10px",cursor:"pointer",textAlign:"left",position:"relative",transition:"all 0.15s",WebkitTapHighlightColor:"transparent"}}>
-              <div style={{fontSize:22,marginBottom:5}}>{p.emoji}</div>
-              <div style={{fontFamily:"'Oswald',sans-serif",fontSize:11,fontWeight:700,color:C.paper,textTransform:"uppercase",lineHeight:1.2,marginBottom:3}}>{p.name}</div>
-              <div style={{fontFamily:"'Courier Prime',monospace",fontSize:8,color:C.amber,letterSpacing:1,textTransform:"uppercase",marginBottom:3}}>{p.era}</div>
-              <div style={{fontSize:10,color:C.faded}}>{p.diff}</div>
-              {p.urgency&&<div style={{position:"absolute",top:5,right:5,fontFamily:"'Oswald',sans-serif",fontSize:7,letterSpacing:1,color:"#e8621a",border:"1px solid #c94a1a",padding:"1px 4px",textTransform:"uppercase"}}>{p.urgency}</div>}
-            </button>
-          ))}
-        </div>
-        <div style={{textAlign:"center",fontFamily:"'Courier Prime',monospace",fontSize:9,letterSpacing:3,color:"rgba(200,136,10,0.3)",textTransform:"uppercase"}}>[ tap a mission to manage ]</div>
-      </div>
-    </div>
-  );
-
-  // ── GAME ──
-  if (screen==="game"&&scene) {
-    const outcomeColor = chosenC?.outcome==="good"?"#4a8a2a":chosenC?.outcome==="bad"?"#9a2a0a":"#4a6080";
-    const outcomeBg = chosenC?.outcome==="good"?"rgba(20,50,8,0.88)":chosenC?.outcome==="bad"?"rgba(50,10,4,0.88)":"rgba(10,24,44,0.88)";
-    return (
-      <div style={{background:C.void,minHeight:"100vh",fontFamily:"'Courier Prime',monospace",display:"flex",flexDirection:"column"}}>
-        {/* Sticky header */}
-        <div style={{background:C.char,padding:"8px 12px",borderBottom:`2px solid ${C.ember}`,position:"sticky",top:0,zIndex:100}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:7,gap:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-              <button onClick={()=>setScreen("home")} style={{background:"transparent",border:"1px solid rgba(200,80,20,0.35)",padding:"5px 9px",color:C.faded,fontFamily:"'Oswald',sans-serif",fontSize:9,cursor:"pointer",letterSpacing:2,textTransform:"uppercase",flexShrink:0,WebkitTapHighlightColor:"transparent"}}>← LOG</button>
-              <div style={{fontFamily:"'Oswald',sans-serif",color:C.amber2,fontSize:13,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{project.emoji} {project.name}</div>
-            </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:5}}>
-            {[["🪙",stats.budget,"Supplies"],["⏱",stats.schedule,"Time"],["👥",stats.team,"Morale"],["🤝",stats.sponsor,"Council"]].map(([icon,val,label])=>(
-              <div key={label} style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(200,136,10,0.15)",padding:"5px 6px",display:"flex",alignItems:"center",justifyContent:"center",gap:4}}>
-                <span style={{fontSize:11}}>{icon}</span>
-                <div>
-                  <div style={{fontFamily:"'Oswald',sans-serif",fontSize:15,fontWeight:700,color:C.paper,lineHeight:1,textAlign:"center"}}>{Math.round(val)}</div>
-                  <div style={{fontFamily:"'Courier Prime',monospace",fontSize:7,color:C.faded,letterSpacing:1,textTransform:"uppercase",textAlign:"center"}}>{label}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Body */}
-        <div style={{flex:1,maxWidth:740,margin:"0 auto",padding:"14px 12px 28px",width:"100%"}}>
-          {/* Phase bar */}
-          <div style={{display:"flex",gap:3,marginBottom:16}}>
-            {project.scenes.map((_,i)=>(
-              <div key={i} style={{flex:1,height:4,background:i<sceneIdx?"#c94a1a":i===sceneIdx?"#e8aa20":"rgba(200,136,10,0.1)",transition:"background 0.3s"}}/>
-            ))}
-          </div>
-          {/* Scene card */}
-          <div style={{background:C.paper,borderLeft:`4px solid ${C.ember}`,padding:"18px 16px 16px",marginBottom:12,boxShadow:"4px 4px 0 rgba(0,0,0,0.45)",position:"relative"}}>
-            <div style={{position:"absolute",inset:0,background:"repeating-linear-gradient(transparent,transparent 28px,rgba(140,110,50,0.1) 28px,rgba(140,110,50,0.1) 29px)",pointerEvents:"none"}}/>
-            <div style={{position:"relative",zIndex:1}}>
-              <div style={{fontFamily:"'Oswald',sans-serif",fontSize:8,letterSpacing:3,color:C.ember,textTransform:"uppercase",marginBottom:7}}>[ {scene.phase} ] — Decision {sceneIdx+1} of {project.scenes.length}</div>
-              <div style={{fontFamily:"'Caveat',cursive",fontSize:"clamp(18px,5vw,24px)",fontWeight:700,color:C.ink,marginBottom:12,lineHeight:1.2}}>{scene.title}</div>
-              <div style={{fontFamily:"'Courier Prime',monospace",fontSize:13,color:"#241808",lineHeight:1.8,marginBottom:14}}>{scene.situation}</div>
-              <hr style={{border:"none",borderTop:"1px dashed rgba(140,110,50,0.35)",marginBottom:12}}/>
-              <div style={{fontFamily:"'Caveat',cursive",fontSize:15,color:"#6a4e28",paddingLeft:12,borderLeft:"2px solid rgba(200,80,20,0.4)",lineHeight:1.5}}>{scene.flavour}</div>
-            </div>
-          </div>
-          {/* Choices */}
-          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-            {scene.choices.map((c,i)=>{
-              const isChosen=chosen===i;
-              const faded=chosen!==null&&!isChosen;
-              const bl=isChosen?(c.outcome==="good"?"#4a8a2a":c.outcome==="bad"?"#9a2a0a":"#4a6080"):"rgba(200,80,20,0.25)";
-              const bg=isChosen?(c.outcome==="good"?"rgba(20,50,8,0.88)":c.outcome==="bad"?"rgba(50,10,4,0.88)":"rgba(10,24,44,0.88)"):"rgba(14,10,6,0.9)";
-              return (
-                <button key={i} onClick={()=>makeChoice(i)} disabled={chosen!==null}
-                  style={{background:bg,border:"1px solid rgba(200,136,10,0.18)",borderLeft:`3px solid ${bl}`,padding:"13px 12px",textAlign:"left",cursor:chosen===null?"pointer":"default",fontFamily:"'Courier Prime',monospace",fontSize:13,color:faded?"rgba(200,192,160,0.25)":C.paper2,lineHeight:1.6,display:"flex",gap:9,alignItems:"flex-start",minHeight:50,transition:"all 0.15s",WebkitTapHighlightColor:"transparent"}}>
-                  <span style={{fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:13,color:C.amber,flexShrink:0,width:16}}>{String.fromCharCode(65+i)}.</span>
-                  <span>{c.text}</span>
-                </button>
-              );
-            })}
-          </div>
-          {/* Outcome */}
-          {chosenC&&(
-            <div style={{background:outcomeBg,border:`1px solid ${outcomeColor}44`,borderLeft:`3px solid ${outcomeColor}`,padding:"13px 14px",marginBottom:12,fontFamily:"'Courier Prime',monospace",fontSize:13,lineHeight:1.75}}>
-              <div style={{fontFamily:"'Oswald',sans-serif",fontWeight:700,fontSize:11,letterSpacing:2,textTransform:"uppercase",marginBottom:7,color:chosenC.outcome==="good"?"#7ac45a":chosenC.outcome==="bad"?"#c45a3a":"#6a8aaa"}}>// {chosenC.title}</div>
-              <p style={{color:C.paper2,marginBottom:9}}>{chosenC.explanation}</p>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {[["SUPPLIES",chosenC.budget],["TIME",chosenC.schedule],["MORALE",chosenC.team],["COUNCIL",chosenC.sponsor]].filter(([,v])=>v!==0).map(([label,val])=>(
-                  <span key={label} style={{padding:"2px 7px",fontFamily:"'Oswald',sans-serif",fontSize:10,letterSpacing:1,background:val>0?"rgba(40,80,20,0.5)":"rgba(80,20,10,0.5)",color:val>0?"#8ac46a":"#c46a4a",border:`1px solid ${val>0?"rgba(80,160,40,0.3)":"rgba(160,40,20,0.3)"}`}}>{label} {val>0?"+":""}{val}</span>
-                ))}
-              </div>
-            </div>
-          )}
-          {chosenC&&(
-            <button onClick={nextScene}
-              style={{background:C.ember,border:"none",padding:"15px 0",fontFamily:"'Oswald',sans-serif",fontSize:13,fontWeight:700,color:C.void,cursor:"pointer",letterSpacing:3,textTransform:"uppercase",width:"100%",WebkitTapHighlightColor:"transparent"}}>
-              {sceneIdx+1>=project.scenes.length?"SEE RESULTS →":"CONTINUE →"}
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // ── END ──
-  if (screen==="end") return (
-    <div style={{background:C.void,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:"28px 16px",fontFamily:"'Courier Prime',monospace"}}>
-      <div style={{maxWidth:500,width:"100%",textAlign:"center"}}>
-        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:8,letterSpacing:5,color:C.ember,textTransform:"uppercase",border:"1px solid rgba(200,80,20,0.4)",display:"inline-block",padding:"4px 12px",marginBottom:16}}>{project.name.toUpperCase()}</div>
-        <div style={{fontSize:52,marginBottom:12}}>{endData.emoji}</div>
-        <div style={{fontFamily:"'Oswald',sans-serif",fontSize:"clamp(1.5rem,6vw,2.6rem)",fontWeight:700,color:C.paper,textTransform:"uppercase",letterSpacing:2,marginBottom:10,lineHeight:1.1}}>{endData.title}</div>
-        <div style={{width:104,height:104,borderRadius:"50%",border:`2px solid ${C.ember}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",boxShadow:"0 0 20px rgba(200,80,20,0.2)"}}>
-          <div style={{fontFamily:"'Oswald',sans-serif",fontSize:42,fontWeight:700,color:C.amber2,lineHeight:1}}>{finalScore}</div>
-          <div style={{fontFamily:"'Courier Prime',monospace",fontSize:7,color:C.faded,letterSpacing:3,textTransform:"uppercase"}}>SCORE</div>
-        </div>
-        <p style={{fontFamily:"'Caveat',cursive",fontSize:16,color:C.paper2,lineHeight:1.7,marginBottom:22,borderLeft:"2px solid rgba(200,80,20,0.4)",paddingLeft:14,textAlign:"left"}}>{endData.verdict}</p>
-        <div style={{display:"flex",gap:14,justifyContent:"center",marginBottom:24,flexWrap:"wrap"}}>
-          {[["🪙",stats.budget,"Supplies"],["⏱",stats.schedule,"Time"],["👥",stats.team,"Morale"],["🤝",stats.sponsor,"Council"]].map(([icon,val,label])=>(
-            <div key={label}>
-              <div style={{fontFamily:"'Oswald',sans-serif",fontSize:28,fontWeight:700,color:C.amber2}}>{Math.round(val)}</div>
-              <div style={{fontFamily:"'Courier Prime',monospace",fontSize:7,color:C.faded,letterSpacing:2,textTransform:"uppercase"}}>{icon} {label}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <button onClick={()=>startProject(project)} style={{background:C.ember,border:"none",padding:"14px 0",fontFamily:"'Oswald',sans-serif",fontSize:12,fontWeight:700,color:C.void,cursor:"pointer",letterSpacing:3,textTransform:"uppercase",width:"100%",WebkitTapHighlightColor:"transparent"}}>↺ TRY AGAIN</button>
-          <button onClick={()=>setScreen("home")} style={{background:"transparent",border:"1px solid rgba(200,80,20,0.35)",padding:"14px 0",fontFamily:"'Oswald',sans-serif",fontSize:12,color:C.paper2,cursor:"pointer",letterSpacing:2,textTransform:"uppercase",width:"100%",WebkitTapHighlightColor:"transparent"}}>← ALL PROJECTS</button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return null;
+function buildHome(){
+  const grid=document.getElementById('projectGrid');
+  grid.innerHTML='';
+  PROJECTS.forEach(p=>{
+    const card=document.createElement('div');
+    card.className='project-card';
+    card.innerHTML=`${p.urgency?`<div class="pc-urgency">${p.urgency}</div>`:''}<span class="pc-emoji">${p.emoji}</span><div class="pc-name">${p.name}</div><div class="pc-era">${p.era}</div><div class="pc-diff">${p.diff}</div>`;
+    card.onclick=()=>startProject(p);
+    grid.appendChild(card);
+  });
 }
-```
+
+function startProject(p){
+  currentProject=p;sceneIndex=0;stats={budget:100,schedule:100,team:100,sponsor:100};score=0;
+  document.getElementById('headerName').textContent=`${p.emoji} ${p.name}`;
+  buildPhaseBar();showScreen('game');renderScene();
+}
+
+function buildPhaseBar(){
+  const bar=document.getElementById('phaseBar');bar.innerHTML='';
+  currentProject.scenes.forEach((_,i)=>{const pip=document.createElement('div');pip.className='phase-pip';pip.id=`pip-${i}`;bar.appendChild(pip);});
+  updatePhaseBar();
+}
+
+function updatePhaseBar(){
+  currentProject.scenes.forEach((_,i)=>{
+    const pip=document.getElementById(`pip-${i}`);
+    pip.className=i<sceneIndex?'phase-pip done':i===sceneIndex?'phase-pip current':'phase-pip';
+  });
+}
+
+function renderScene(){
+  const s=currentProject.scenes[sceneIndex];
+  document.getElementById('scenePhase').textContent=`[ ${s.phase} ] — Decision ${sceneIndex+1} of ${currentProject.scenes.length}`;
+  document.getElementById('sceneTitle').textContent=s.title;
+  document.getElementById('sceneSituation').textContent=s.situation;
+  document.getElementById('sceneFlavour').textContent=s.flavour;
+  const ch=document.getElementById('choices');ch.innerHTML='';
+  s.choices.forEach((c,i)=>{
+    const btn=document.createElement('button');btn.className='choice-btn';
+    btn.innerHTML=`<span class="choice-letter">${String.fromCharCode(65+i)}.</span><span>${c.text}</span>`;
+    btn.onclick=()=>makeChoice(i);ch.appendChild(btn);
+  });
+  document.getElementById('outcomeBox').className='outcome-box';
+  document.getElementById('outcomeBox').style.display='none';
+  document.getElementById('nextBtn').className='next-btn';
+  updateStats();updatePhaseBar();
+}
+
+function makeChoice(idx){
+  const s=currentProject.scenes[sceneIndex],c=s.choices[idx];
+  stats.budget=Math.max(0,Math.min(100,stats.budget+c.budget));
+  stats.schedule=Math.max(0,Math.min(100,stats.schedule+c.schedule));
+  stats.team=Math.max(0,Math.min(100,stats.team+c.team));
+  stats.sponsor=Math.max(0,Math.min(100,stats.sponsor+c.sponsor));
+  if(c.outcome==='good')score+=20;else if(c.outcome==='neutral')score+=10;
+  updateStats();
+  document.querySelectorAll('.choice-btn').forEach((btn,i)=>{btn.className=i===idx?`choice-btn chosen-${c.outcome}`:'choice-btn not-chosen';});
+  const ob=document.getElementById('outcomeBox');
+  ob.className=`outcome-box ${c.outcome} show`;ob.style.display='block';
+  document.getElementById('outcomeTitle').textContent=`// ${c.title}`;
+  document.getElementById('outcomeText').textContent=c.explanation;
+  const changes=[];
+  if(c.budget)changes.push({l:`SUPPLIES ${c.budget>0?'+':''}${c.budget}`,cls:c.budget>0?'sc-pos':'sc-neg'});
+  if(c.schedule)changes.push({l:`TIME ${c.schedule>0?'+':''}${c.schedule}`,cls:c.schedule>0?'sc-pos':'sc-neg'});
+  if(c.team)changes.push({l:`MORALE ${c.team>0?'+':''}${c.team}`,cls:c.team>0?'sc-pos':'sc-neg'});
+  if(c.sponsor)changes.push({l:`COUNCIL ${c.sponsor>0?'+':''}${c.sponsor}`,cls:c.sponsor>0?'sc-pos':'sc-neg'});
+  document.getElementById('statChange').innerHTML=changes.map(x=>`<span class="sc-item ${x.cls}">${x.l}</span>`).join('');
+  document.getElementById('nextBtn').className='next-btn show';
+  // On mobile, scroll outcome into view smoothly
+  setTimeout(()=>{
+    document.getElementById('outcomeBox').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }, 80);
+}
+
+function updateStats(){
+  document.getElementById('statBudget').textContent=Math.round(stats.budget);
+  document.getElementById('statSchedule').textContent=Math.round(stats.schedule);
+  document.getElementById('statTeam').textContent=Math.round(stats.team);
+  document.getElementById('statSponsor').textContent=Math.round(stats.sponsor);
+}
+
+function nextScene(){
+  sceneIndex++;
+  if(sceneIndex>=currentProject.scenes.length)showEnd();
+  else{renderScene();window.scrollTo(0,0);}
+}
+
+function showEnd(){
+  const avg=Math.round((stats.budget+stats.schedule+stats.team+stats.sponsor)/4);
+  const finalScore=Math.round((score+avg)/2);
+  let emoji,title,verdict;
+  if(finalScore>=80){emoji='🌱';title='The Settlement Survives';verdict='You gave people water, food, shelter, connection, or safety. Not with machines. With decisions. That is what management has always been. That is what it still is.';}
+  else if(finalScore>=60){emoji='🕯️';title='Good Enough to Live';verdict="Imperfect. A few wrong calls. But the project got done and people are alive who might not have been. Good enough is everything right now.";}
+  else if(finalScore>=40){emoji='🪨';title='Built on Shaky Ground';verdict="The project exists. The problems are real. You'll fix them. Nobody who managed a reconstruction project got it right first time.";}
+  else{emoji='💀';title='Lessons for Next Time';verdict="The hardest projects in history were managed by humans making hard decisions with imperfect information. You just did that. The next attempt will be better.";}
+  document.getElementById('endProject').textContent=currentProject.name.toUpperCase();
+  document.getElementById('endEmoji').textContent=emoji;
+  document.getElementById('endTitle').textContent=title;
+  document.getElementById('endScore').textContent=finalScore;
+  document.getElementById('endVerdict').textContent=verdict;
+  document.getElementById('endBudget').textContent=Math.round(stats.budget);
+  document.getElementById('endSchedule').textContent=Math.round(stats.schedule);
+  document.getElementById('endTeam').textContent=Math.round(stats.team);
+  document.getElementById('endSponsor').textContent=Math.round(stats.sponsor);
+  showScreen('end');
+}
+
+function replayProject(){startProject(currentProject);}
+function goHome(){showScreen('home');}
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');window.scrollTo(0,0);}
+buildHome();
+</script>
+</body>
+</html>
